@@ -1,0 +1,31 @@
+using System.Diagnostics;
+
+namespace DecoupledTemplate.Core
+{
+    /// <summary>
+    /// The only place in the project allowed to call UnityEngine.Debug (R13).
+    /// Conditional strips the call site and the evaluation of its arguments at compile time,
+    /// which a plain Debug.Log does not: the interpolated string is always built otherwise.
+    /// </summary>
+    public static class Log
+    {
+        public const string VERBOSE = "DECOUPLEDTEMPLATE_VERBOSE";
+
+        // Fully qualified on purpose. Once DecoupledTemplate.Debug exists as a namespace,
+        // a bare Debug in this scope resolves to the namespace instead of the type (CS0118).
+        [Conditional(VERBOSE)]
+        public static void Trace(string msg) => UnityEngine.Debug.Log(msg);
+
+        // DEBUG, not the guide's "UNITY_EDITOR" plus "DEVELOPMENT_BUILD". Two reasons: a single
+        // Conditional attribute takes one symbol, so the guide's version does not compile at all,
+        // and DEVELOPMENT_BUILD is deprecated as a compilation directive in Unity 6, where it
+        // raises warning UAC0009 on every compile. DEBUG is the variant-aware symbol Unity
+        // defines in the Editor and in development builds, which is the intended behaviour.
+        [Conditional("DEBUG")]
+        public static void Info(string msg) => UnityEngine.Debug.Log(msg);
+
+        public static void Warn(string msg) => UnityEngine.Debug.LogWarning(msg);
+
+        public static void Error(string msg) => UnityEngine.Debug.LogError(msg);
+    }
+}

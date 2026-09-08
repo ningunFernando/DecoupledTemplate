@@ -18,8 +18,8 @@ suavizado, nunca Cinemachine y script en cascada).
 **Materializado en el Paso 1 (decisión de Fernando, 2026-09-08): la plantilla tiene 7 assemblies, no
 las 8 de la guía.** No existen `Assets/_Game/Runtime/CameraRig/` ni `DecoupledTemplate.Camera.asmdef`.
 Toda verificación que en la guía diga `→ 8` (el Paso 1 y el *Definition of Done*) se lee `→ 7` aquí.
-Si se añade cámara, entra como hoja nueva del grafo — referencia a `Core`+`Data`, y solo `Debug` y
-`Tests` la referencian — y hay que actualizar estas cuentas.
+Si se añade cámara, entra como hoja nueva del grafo (referencia a `Core`+`Data`, y solo `Debug` y
+`Tests` la referencian) y hay que actualizar estas cuentas.
 
 ## Placeholders fijados (sección 2 de la guía)
 
@@ -81,7 +81,7 @@ es una decisión pendiente, no un paso de la plantilla.
   `.qwenignore` y `.qwen/` vivan donde tocan y la memoria de proyecto tenga una clave estable.
 - **Sin `Runtime/CameraRig/` ni `{ASM}.Camera`**: 7 assemblies. Ver "Alcance acordado" arriba.
 - **Sin `Art/`, `Audio/`, `Shading/` ni `_Game/Settings/`.** La sección 4 de la guía los dibuja, pero
-  ningún paso los llena nunca, y `Assets/Settings/` ya existe con los assets de URP — un segundo
+  ningún paso los llena nunca, y `Assets/Settings/` ya existe con los assets de URP: un segundo
   `Settings/` vacío solo invita a dudar de cuál manda. Una carpeta vacía es la versión-carpeta de los
   stubs que critica M11. Crearlas cuando haya contenido cuesta cero.
 - **Sin `_Game/Docs/`.** La guía pone ahí el `ARCHITECTURE.md` del Paso 8; aquí va en `Assets/Docs/`,
@@ -105,6 +105,23 @@ es una decisión pendiente, no un paso de la plantilla.
   Si un sistema todavía no va a tener consumidor, no se escribe.
 - No commitear ni revertir cambios preexistentes del worktree: son de Fernando.
 
+## Convenciones de escritura (obligatorias para cualquier agente)
+
+Fijadas por Fernando el 2026-09-08. Aplican a todo lo que se escriba en este repo: código,
+comentarios, mensajes de commit y documentación.
+
+- **Cero emojis.** Ni en comentarios, ni en código, ni en strings de log, ni en documentación.
+- **Cero em-dash (`—`).** En su lugar: coma, punto, dos puntos o paréntesis. Aplica también a la
+  documentación en español. Los separadores de sección que la sección 7 de la guía dibuja con
+  caracteres de caja (`─`, U+2500) no son em-dash y se mantienen.
+- **Código y comentarios en inglés.** Nombres de tipos, métodos y campos, strings de log, XML doc y
+  comentarios de código. La sección 7 de la guía ya exige un solo idioma en los logs: inglés.
+- **Documentación en español.** `QWEN.md`, `Assets/Docs/*.md`, y en su momento `README.md` y
+  `ARCHITECTURE.md`.
+
+El texto preexistente de este archivo y de la guía contiene em-dash escritos antes de esta decisión.
+No hacer reescrituras masivas: corregirlos solo en los párrafos que se toquen.
+
 ## Estado de la construcción
 
 **Paso 1 completado el 2026-09-08** — commit `27caaa8` (19 carpetas + 7 `.asmdef` + sus `.meta`,
@@ -118,18 +135,57 @@ entre sí · `Debug` y `Tests` hojas · Unity importó los 7 asmdefs (`AssemblyD
 correcto hasta el Paso 2, no un fallo.
 
 Lo único que sigue sin comprobar es el grafo **visual** en el Editor (`Window → Analysis → Assembly
-Dependencies`, o abrir cada `.asmdef` y mirar *References*). El constraint
-`UNITY_EDITOR || DEVELOPMENT_BUILD` ya no es una incógnita: esa forma con `||` la usan paquetes de
-Unity instalados en esta misma versión (`Unity.AI.Assistant.Runtime`, `Unity.AppUI`), así que el
-fallback de la sección 4.1 no hace falta.
+Dependencies`, o abrir cada `.asmdef` y mirar *References*). La sintaxis con `||` del constraint de
+`Debug` sí está resuelta: esa forma la usan paquetes de Unity instalados en esta misma versión
+(`Unity.AI.Assistant.Runtime`, `Unity.AppUI`), así que el fallback de la sección 4.1 no hace falta.
+El símbolo que usa, en cambio, sí es problemático: ver pendiente 6.
+
+**Paso 2 completado el 2026-09-08** — 13 `.cs` (858 líneas) en `DecoupledTemplate.Core`, aún sin
+commitear. Unity los compiló a `Library/ScriptAssemblies/DecoupledTemplate.Core.dll` con **cero
+errores y cero warnings**, comprobado sobre el trozo nuevo de `Logs/Editor.log` y no de memoria.
+Cero `Debug.Log` fuera de `Log.cs` (R13) · namespace en los 13 (R2) · cero `Find` (R6) · dos
+`TODO(Fase-4)` con el formato de R12 · cero em-dash y cero emojis.
+
+Dos defectos de la guía, corregidos al escribir el código:
+
+- **§6.1 no compila.** `[Conditional("UNITY_EDITOR", "DEVELOPMENT_BUILD")]` es ilegal:
+  `ConditionalAttribute` toma un solo string. La forma válida serían dos atributos apilados, que el
+  compilador lee como OR.
+- **`DEVELOPMENT_BUILD` está deprecado como directiva de compilación en Unity 6** y genera el warning
+  `UAC0009` en cada compilado. `Log.Info` lleva `[Conditional("DEBUG")]`, el símbolo variant-aware
+  que el propio aviso recomienda y que cubre la misma intención (Editor + development build).
+  Verificado contra `Library/Bee/artifacts/*.dag/DecoupledTemplate.Core.rsp`: `DEBUG` sí está
+  definido en el Editor, `DEVELOPMENT_BUILD` no.
 
 ### Pendientes
 
-1. **`QWEN.md`, `.qwenignore` y `Assets/Docs/` siguen sin rastrear.** Son anteriores al Paso 1 y la
-   regla de abajo prohíbe commitear trabajo preexistente de Fernando. Decidir si entran en un commit
-   propio: mientras no estén, la guía que autoriza todo esto no está en el historial.
-2. **La guía existe dos veces** (`Assets/Docs/` aquí y `HamsterBall/Docs/`). La autoritativa es la de
-   este repo; si se edita, la otra diverge en silencio.
+1. **La guía existe dos veces** (`Assets/Docs/` aquí y `HamsterBall/Docs/`). La autoritativa es la de
+   este repo; si se edita, la otra diverge en silencio. (El pendiente de rastrear `QWEN.md`,
+   `.qwenignore` y `Assets/Docs/` quedó resuelto por Fernando en el commit `2e4ed28`.)
+2. **`Core` no puede referenciar `Save` (R3), pero §6.4 y §6.5 lo dan por supuesto.**
+   `GameManager.RegisterManagers(SaveSystem, ObjectPoolManager)` y el campo `_saveSystemPrefab` del
+   `Bootstrapper` son imposibles tal como están escritos: en HamsterBall todo vivía en
+   `Assembly-CSharp`, aquí `Core` solo referencia `Data`. El Paso 2 se escribió sin ninguna
+   dependencia de `Save` (`RegisterManagers(ObjectPoolManager)` y un `TODO(Fase-4)` marcando el hueco
+   en la secuencia). **Decisión para el Paso 4**, con tres salidas: (a) una interfaz en `Core` que
+   `SaveSystem` implemente, inversión de dependencias clásica, pero §1 prohíbe interfaces que no
+   tengan dos implementaciones; (b) que el save se dispare solo por `EventBus` (R4) y `GameManager`
+   no llegue a conocer `SaveSystem`; (c) mover el cableado del bootstrap a una assembly por encima
+   de `Save`, que rompe la ubicación de §4.
+3. **`DECOUPLEDTEMPLATE_VERBOSE` no está definido**, así que todo `Log.Trace` se compila fuera. La
+   verificación del Paso 6 ("comprobar en la consola la secuencia completa de pasos numerados") es
+   imposible hasta añadirlo en `Project Settings → Player → Scripting Define Symbols`.
+4. **`OnBootstrapComplete` no tiene suscriptores**, y `Publish` avisa cuando no los hay (§6.2). Eso
+   choca con la verificación del Paso 6 ("sin errores ni warnings"). La salida limpia es que
+   `DebugHud` se suscriba a él en el Paso 5; la otra es aceptar el warning.
+5. **`Log.Info` todavía no tiene ningún call site.** Es la única pieza del Paso 2 sin consumidor. Se
+   mantiene porque §6.1 especifica los cuatro niveles del wrapper; inventarle una llamada para
+   cumplir la regla sería justo el código decorativo que la guía critica.
+6. **El `defineConstraints` del asmdef de `Debug` usa `DEVELOPMENT_BUILD`**, el símbolo deprecado que
+   dispara `UAC0009`. Como esa assembly aún no tiene scripts no se compila y no avisa, pero en cuanto
+   exista `DebugHud.cs` puede pasar algo peor que un warning: que el constraint no se cumpla en un
+   development build y el HUD quede fuera en silencio. Verificar con un development build real (el
+   último punto del *Definition of Done* ya lo pide) antes de cambiarlo a ciegas.
 
 ### Anotado para el Paso 5 (no antes: sería adelantar trabajo)
 
