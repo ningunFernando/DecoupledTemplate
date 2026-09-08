@@ -105,3 +105,15 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# ---------------------------------------------------------------------------
+# Local additions (keep below the synced github/gitignore block so a re-sync
+# of the template above does not silently drop them)
+# ---------------------------------------------------------------------------
+
+# macOS
+.DS_Store
+
+# Unity 6 writes the solution as .slnx (the synced template only lists *.sln).
+# Regenerated on every asmdef change, so tracking it means a permanent diff.
+*.slnx
