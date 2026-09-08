@@ -1,0 +1,44 @@
+# Generado por Unity — nunca aporta nada y hace lentísimo el rastreo de archivos.
+Library/
+Temp/
+.utmp/
+Obj/
+obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+ServerData/
+
+# IDE y herramientas de build
+.vs/
+.gradle/
+.consulo/
+
+# Archivos de proyecto generados por Unity a partir de los .asmdef.
+# Se regeneran solos; leerlos solo gasta contexto.
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.log
+
+# Generados por el Test Runner y por Visual Scripting
+InitTestScene*.unity*
+InitTestScene*.unity*.meta
+Assets/Unity.VisualScripting.Generated/
+
+# macOS
+.DS_Store
