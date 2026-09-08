@@ -1,0 +1,16 @@
+{
+    "name": "DecoupledTemplate.Core",
+    "rootNamespace": "DecoupledTemplate.Core",
+    "references": [
+        "DecoupledTemplate.Data"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

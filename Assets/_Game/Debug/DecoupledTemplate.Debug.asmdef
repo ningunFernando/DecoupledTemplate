@@ -1,0 +1,20 @@
+{
+    "name": "DecoupledTemplate.Debug",
+    "rootNamespace": "DecoupledTemplate.Debug",
+    "references": [
+        "DecoupledTemplate.Core",
+        "DecoupledTemplate.Data",
+        "DecoupledTemplate.Player"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_EDITOR || DEVELOPMENT_BUILD"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
