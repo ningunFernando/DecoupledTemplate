@@ -138,11 +138,12 @@ Lo único que sigue sin comprobar es el grafo **visual** en el Editor (`Window �
 Dependencies`, o abrir cada `.asmdef` y mirar *References*). La sintaxis con `||` del constraint de
 `Debug` sí está resuelta: esa forma la usan paquetes de Unity instalados en esta misma versión
 (`Unity.AI.Assistant.Runtime`, `Unity.AppUI`), así que el fallback de la sección 4.1 no hace falta.
-El símbolo que usa, en cambio, sí es problemático: ver pendiente 6.
+El símbolo que usa, en cambio, sí es problemático: ver pendiente 5.
 
-**Paso 2 completado el 2026-09-08** — 13 `.cs` (858 líneas) en `DecoupledTemplate.Core`, aún sin
-commitear. Unity los compiló a `Library/ScriptAssemblies/DecoupledTemplate.Core.dll` con **cero
-errores y cero warnings**, comprobado sobre el trozo nuevo de `Logs/Editor.log` y no de memoria.
+**Paso 2 completado el 2026-09-08** — commit `ac95464`, 13 `.cs` (858 líneas) en
+`DecoupledTemplate.Core`. Unity los compiló a `Library/ScriptAssemblies/DecoupledTemplate.Core.dll`
+con **cero errores y cero warnings**, comprobado sobre el trozo nuevo de `Logs/Editor.log` y no de
+memoria.
 Cero `Debug.Log` fuera de `Log.cs` (R13) · namespace en los 13 (R2) · cero `Find` (R6) · dos
 `TODO(Fase-4)` con el formato de R12 · cero em-dash y cero emojis.
 
@@ -156,6 +157,28 @@ Dos defectos de la guía, corregidos al escribir el código:
   que el propio aviso recomienda y que cubre la misma intención (Editor + development build).
   Verificado contra `Library/Bee/artifacts/*.dag/DecoupledTemplate.Core.rsp`: `DEBUG` sí está
   definido en el Editor, `DEVELOPMENT_BUILD` no.
+
+**Paso 3 completado el 2026-09-08** — `GameConfigSO.cs` en `DecoupledTemplate.Data` y su cableado en
+el `Bootstrapper`, que pasa de un `const GAME_SCENE_NAME` a leer `_gameConfig.GameSceneName`. Con eso
+la arista `Core → Data` deja de estar muerta: ya hay un tipo de `Core` usando uno de `Data`. Unity
+compila `DecoupledTemplate.Data.dll` y `DecoupledTemplate.Core.dll` con cero errores y cero warnings.
+El asset `GameConfig_Default.asset` lo crea Fernando en el Editor, que es justo lo que ejercita el
+`[CreateAssetMenu]`: si está mal escrito, no se descubre hasta ese momento.
+
+Consecuencia estructural que conviene no olvidar: **`Data` no referencia nada (R3), así que ningún SO
+puede usar tipos de `Core`.** `GameState` vive en `Core.State` y `PoolConfig` en `Core.Pool`, por lo
+que un `GameConfigSO` no puede tener un campo de estado inicial ni una lista de pools; cualquier enum
+que necesite tiene que declararlo dentro de `Data`. Si algún día se quiere configuración dirigida por
+datos, hay dos salidas: mover el enum `GameState` a `Data` (la arista ya existe, y es más barato
+antes del Paso 6, cuando aún no hay prefabs ni escenas que referencien `GameManager`), o declarar en
+`Data` un enum propio que `Core` traduzca.
+
+`GameConfigSO` lleva un solo campo a propósito: es lo único de `Core` configurable hoy sin romper R3,
+y añadir campos sin consumidor para que el archivo parezca más completo sería el M11 que la guía
+prohíbe. Tampoco lleva `OnValidate`, porque se dispara en cada pulsación del Inspector y cualquier
+reescritura o aviso ahí pelea con quien está editando. La validación vive en el consumidor:
+`Bootstrapper.ValidateConfiguration()` comprueba el SO y el nombre de escena **antes** de instanciar
+nada y lanza excepción, en vez de fallar al final de la secuencia con un `LoadScene` incomprensible.
 
 ### Pendientes
 
@@ -172,16 +195,13 @@ Dos defectos de la guía, corregidos al escribir el código:
    tengan dos implementaciones; (b) que el save se dispare solo por `EventBus` (R4) y `GameManager`
    no llegue a conocer `SaveSystem`; (c) mover el cableado del bootstrap a una assembly por encima
    de `Save`, que rompe la ubicación de §4.
-3. **`DECOUPLEDTEMPLATE_VERBOSE` no está definido**, así que todo `Log.Trace` se compila fuera. La
-   verificación del Paso 6 ("comprobar en la consola la secuencia completa de pasos numerados") es
-   imposible hasta añadirlo en `Project Settings → Player → Scripting Define Symbols`.
-4. **`OnBootstrapComplete` no tiene suscriptores**, y `Publish` avisa cuando no los hay (§6.2). Eso
+3. **`OnBootstrapComplete` no tiene suscriptores**, y `Publish` avisa cuando no los hay (§6.2). Eso
    choca con la verificación del Paso 6 ("sin errores ni warnings"). La salida limpia es que
    `DebugHud` se suscriba a él en el Paso 5; la otra es aceptar el warning.
-5. **`Log.Info` todavía no tiene ningún call site.** Es la única pieza del Paso 2 sin consumidor. Se
-   mantiene porque §6.1 especifica los cuatro niveles del wrapper; inventarle una llamada para
-   cumplir la regla sería justo el código decorativo que la guía critica.
-6. **El `defineConstraints` del asmdef de `Debug` usa `DEVELOPMENT_BUILD`**, el símbolo deprecado que
+4. **`Log.Info` todavía no tiene ningún call site.** Es la única pieza escrita hasta ahora sin
+   consumidor. Se mantiene porque §6.1 especifica los cuatro niveles del wrapper; inventarle una
+   llamada para cumplir la regla sería justo el código decorativo que la guía critica.
+5. **El `defineConstraints` del asmdef de `Debug` usa `DEVELOPMENT_BUILD`**, el símbolo deprecado que
    dispara `UAC0009`. Como esa assembly aún no tiene scripts no se compila y no avisa, pero en cuanto
    exista `DebugHud.cs` puede pasar algo peor que un warning: que el constraint no se cumpla en un
    development build y el HUD quede fuera en silencio. Verificar con un development build real (el

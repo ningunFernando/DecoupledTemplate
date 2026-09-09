@@ -3,6 +3,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using DecoupledTemplate.Core.Pool;
+using DecoupledTemplate.Data;
 
 namespace DecoupledTemplate.Core
 {
@@ -12,8 +13,6 @@ namespace DecoupledTemplate.Core
     /// </summary>
     public class Bootstrapper : MonoBehaviour
     {
-        private const string GAME_SCENE_NAME = "Scene_Game";
-
         // ────────────────────────────────
         // INSPECTOR
         // ────────────────────────────────
@@ -24,6 +23,10 @@ namespace DecoupledTemplate.Core
         [SerializeField] private GameManager       _gameManagerPrefab;
         [Tooltip("ObjectPoolManager prefab. Required: the sequence throws if it is not assigned.")]
         [SerializeField] private ObjectPoolManager _poolManagerPrefab;
+
+        [Header("Configuration")]
+        [Tooltip("Global game configuration. Required: the sequence throws if it is not assigned.")]
+        [SerializeField] private GameConfigSO      _gameConfig;
 
         #endregion
 
@@ -59,6 +62,8 @@ namespace DecoupledTemplate.Core
         /// </summary>
         private IEnumerator InitializeSequence()
         {
+            ValidateConfiguration();
+
             Log.Trace("[Bootstrapper] ----- SEQUENCE STARTED -----");
 
             InstantiateManagers();
@@ -84,6 +89,24 @@ namespace DecoupledTemplate.Core
         // INITIALIZATION STEPS
         // ────────────────────────────────
         #region Initialization Steps
+
+        /// <summary>
+        /// Checked before anything runs. An empty scene name would otherwise only surface at the
+        /// very end of the sequence, as a confusing LoadScene failure and with every manager
+        /// already alive (R8, R9).
+        /// </summary>
+        private void ValidateConfiguration()
+        {
+            if (_gameConfig == null)
+            {
+                throw new InvalidOperationException("[Bootstrapper] Game config not assigned.");
+            }
+
+            if (string.IsNullOrWhiteSpace(_gameConfig.GameSceneName))
+            {
+                throw new InvalidOperationException("[Bootstrapper] GameConfigSO.gameSceneName is empty.");
+            }
+        }
 
         private void InstantiateManagers()
         {
@@ -119,7 +142,7 @@ namespace DecoupledTemplate.Core
         private void LoadGameScene()
         {
             SceneManager.sceneLoaded += OnGameSceneLoaded;
-            SceneManager.LoadScene(GAME_SCENE_NAME);
+            SceneManager.LoadScene(_gameConfig.GameSceneName);
         }
 
         #endregion
