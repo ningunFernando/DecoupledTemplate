@@ -144,7 +144,7 @@ Lo único que sigue sin comprobar es el grafo **visual** en el Editor (`Window �
 Dependencies`, o abrir cada `.asmdef` y mirar *References*). La sintaxis con `||` del constraint de
 `Debug` sí está resuelta: esa forma la usan paquetes de Unity instalados en esta misma versión
 (`Unity.AI.Assistant.Runtime`, `Unity.AppUI`), así que el fallback de la sección 4.1 no hace falta.
-El símbolo que usa, en cambio, sí es problemático: ver pendiente 5.
+El símbolo que usa, en cambio, sí es problemático: ver pendiente 4.
 
 **Paso 2 completado el 2026-09-08** — commit `ac95464`, 13 `.cs` (858 líneas) en
 `DecoupledTemplate.Core`. Unity los compiló a `Library/ScriptAssemblies/DecoupledTemplate.Core.dll`
@@ -186,28 +186,51 @@ reescritura o aviso ahí pelea con quien está editando. La validación vive en 
 `Bootstrapper.ValidateConfiguration()` comprueba el SO y el nombre de escena **antes** de instanciar
 nada y lanza excepción, en vez de fallar al final de la secuencia con un `LoadScene` incomprensible.
 
+**Verificado en Play Mode el 2026-09-08.** Fernando montó adelantando parte del Paso 6
+(`Scene_Bootstrap`, `Scene_Game`, `GameManager.prefab`, `ObjectPoolManager.prefab` y el asset
+`GameConfig_Default`), y la secuencia sale completa en la consola y termina en `Scene_Game` con
+`PlayState` activo: las once líneas de la secuencia más `Scene_Game loaded`, `Menu -> Play`,
+`MenuState Exit`, `PlayState Enter` y `Game started`. Del Paso 6 queda el índice 0 de
+`Scene_Bootstrap` en Build Settings, meter el `DebugHud` en `Scene_Game`, y comprobar que entrar en
+Play desde `Scene_Game` directamente degrada con un error claro en vez de con una NRE.
+
+**Paso 4 completado el 2026-09-08** — las tres capas de `DecoupledTemplate.Save`
+(`ISaveStorage` + `JsonSaveStorage` de infraestructura, `ProgressService` de dominio, `SaveSystem`
+de adapter) más `SaveData` versionado desde el día 1 y `SaveMigrations` con su cadena. La
+verificación de la guía sale limpia: `MonoBehaviour` solo aparece en `SaveSystem.cs`. Compila con
+cero errores y cero warnings. El save se escribe en
+`~/Library/Application Support/DefaultCompany/DecoupledTemplate/save.json`.
+
+El antiguo pendiente de cómo llegar al save sin romper R3 quedó resuelto con la salida (a): **`Core`
+declara `ISaveLifecycle` (`Load`/`Save`) y el `Bootstrapper` instancia el prefab de `SaveSystem` como
+`GameObject` sin tipo**, resolviendo el contrato con `GetComponent`, que lanza si el prefab no lo
+lleva. `GameManager` no llega a conocer el save: la referencia la conserva el `Bootstrapper`, que es
+quien la crea (R6). Es la única abstracción nueva del proyecto y no es especulativa: es la frontera
+que R3 obliga a tener entre las dos assemblies.
+
+Detalle de plataforma que la guía da por supuesto y este entorno no cumple: `File.Move(origen,
+destino, overwrite)` **no existe** en el nivel de compatibilidad de API del proyecto (CS1501). La
+escritura transaccional de `JsonSaveStorage` borra el destino antes de mover: el archivo final nunca
+queda truncado, y si el proceso muere entre el borrado y el move, el `.tmp` conserva el payload.
+
+**Verificado en Play Mode el 2026-09-08.** Con `SaveSystem.prefab` creado y asignado al campo nuevo
+del `Bootstrapper`, la secuencia sale con sus tres pasos y `[SaveSystem] Loaded save v1.` entre el
+paso 1 y el 2. Todavía no se escribe `save.json` en disco: nada muta el progreso, `_dirty` nunca se
+activa, y eso es lo correcto. El round-trip de escritura y migración lo prueban los tests del Paso 7
+contra una carpeta temporal.
+
 ### Pendientes
 
 1. **La guía existe dos veces** (`Assets/Docs/` aquí y `HamsterBall/Docs/`). La autoritativa es la de
    este repo; si se edita, la otra diverge en silencio. (El pendiente de rastrear `QWEN.md`,
    `.qwenignore` y `Assets/Docs/` quedó resuelto por Fernando en el commit `2e4ed28`.)
-2. **`Core` no puede referenciar `Save` (R3), pero §6.4 y §6.5 lo dan por supuesto.**
-   `GameManager.RegisterManagers(SaveSystem, ObjectPoolManager)` y el campo `_saveSystemPrefab` del
-   `Bootstrapper` son imposibles tal como están escritos: en HamsterBall todo vivía en
-   `Assembly-CSharp`, aquí `Core` solo referencia `Data`. El Paso 2 se escribió sin ninguna
-   dependencia de `Save` (`RegisterManagers(ObjectPoolManager)` y un `TODO(Fase-4)` marcando el hueco
-   en la secuencia). **Decisión para el Paso 4**, con tres salidas: (a) una interfaz en `Core` que
-   `SaveSystem` implemente, inversión de dependencias clásica, pero §1 prohíbe interfaces que no
-   tengan dos implementaciones; (b) que el save se dispare solo por `EventBus` (R4) y `GameManager`
-   no llegue a conocer `SaveSystem`; (c) mover el cableado del bootstrap a una assembly por encima
-   de `Save`, que rompe la ubicación de §4.
-3. **`OnBootstrapComplete` no tiene suscriptores**, y `Publish` avisa cuando no los hay (§6.2). Eso
+2. **`OnBootstrapComplete` no tiene suscriptores**, y `Publish` avisa cuando no los hay (§6.2). Eso
    choca con la verificación del Paso 6 ("sin errores ni warnings"). La salida limpia es que
    `DebugHud` se suscriba a él en el Paso 5; la otra es aceptar el warning.
-4. **`Log.Info` todavía no tiene ningún call site.** Es la única pieza escrita hasta ahora sin
+3. **`Log.Info` todavía no tiene ningún call site.** Es la única pieza escrita hasta ahora sin
    consumidor. Se mantiene porque §6.1 especifica los cuatro niveles del wrapper; inventarle una
    llamada para cumplir la regla sería justo el código decorativo que la guía critica.
-5. **El `defineConstraints` del asmdef de `Debug` usa `DEVELOPMENT_BUILD`**, el símbolo deprecado que
+4. **El `defineConstraints` del asmdef de `Debug` usa `DEVELOPMENT_BUILD`**, el símbolo deprecado que
    dispara `UAC0009`. Como esa assembly aún no tiene scripts no se compila y no avisa, pero en cuanto
    exista `DebugHud.cs` puede pasar algo peor que un warning: que el constraint no se cumpla en un
    development build y el HUD quede fuera en silencio. Verificar con un development build real (el

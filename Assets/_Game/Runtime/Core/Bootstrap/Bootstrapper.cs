@@ -28,10 +28,15 @@ namespace DecoupledTemplate.Core
         [Tooltip("Global game configuration. Required: the sequence throws if it is not assigned.")]
         [SerializeField] private GameConfigSO      _gameConfig;
 
+        [Header("Save")]
+        [Tooltip("SaveSystem prefab. Required: the sequence throws if it is not assigned.")]
+        [SerializeField] private GameObject        _saveSystemPrefab;
+
         #endregion
 
         private GameManager       _gameManager;
         private ObjectPoolManager _poolManager;
+        private ISaveLifecycle    _saveSystem;
 
         // ────────────────────────────────
         // LIFECYCLE
@@ -64,13 +69,13 @@ namespace DecoupledTemplate.Core
             yield return null;
             Log.Trace("[Bootstrapper] Step 1 complete: Managers");
 
-            // TODO(Fase-4): the save step belongs here, between Managers and Object Pools.
-            // Core cannot reference Save (R3), so how SaveSystem reaches this sequence is an
-            // open design decision, not a forgotten line.
+            LoadSaveData();
+            yield return null;
+            Log.Trace("[Bootstrapper] Step 2 complete: Save Data");
 
             InitializeObjectPools();
             yield return null;
-            Log.Trace("[Bootstrapper] Step 2 complete: Object Pools");
+            Log.Trace("[Bootstrapper] Step 3 complete: Object Pools");
 
             Log.Trace("[Bootstrapper] ----- SEQUENCE COMPLETED -----");
 
@@ -100,6 +105,11 @@ namespace DecoupledTemplate.Core
             {
                 throw new InvalidOperationException("[Bootstrapper] GameConfigSO.gameSceneName is empty.");
             }
+
+            if (_saveSystemPrefab == null)
+            {
+                throw new InvalidOperationException("[Bootstrapper] SaveSystem prefab not assigned.");
+            }
         }
 
         private void InstantiateManagers()
@@ -110,6 +120,16 @@ namespace DecoupledTemplate.Core
 
             _gameManager = InstantiateRequired(_gameManagerPrefab, "GameManager");
             _poolManager = InstantiateRequired(_poolManagerPrefab, "ObjectPoolManager");
+
+            // Untyped on purpose: Core cannot reference the Save assembly (R3), so the prefab is
+            // a plain GameObject and the contract is the ISaveLifecycle interface that Core owns.
+            GameObject saveInstance = InstantiateRequired(_saveSystemPrefab, "SaveSystem");
+            _saveSystem = saveInstance.GetComponent<ISaveLifecycle>();
+
+            if (_saveSystem == null)
+            {
+                throw new InvalidOperationException("[Bootstrapper] SaveSystem prefab has no ISaveLifecycle component.");
+            }
         }
 
         /// <summary>
@@ -117,7 +137,7 @@ namespace DecoupledTemplate.Core
         /// to a game that starts without its managers produces a NullReferenceException halfway
         /// through the coroutine and a black screen with no usable diagnostic (A3).
         /// </summary>
-        private T InstantiateRequired<T>(T prefab, string label) where T : Component
+        private T InstantiateRequired<T>(T prefab, string label) where T : UnityEngine.Object
         {
             if (prefab == null)
             {
@@ -125,6 +145,11 @@ namespace DecoupledTemplate.Core
             }
 
             return Instantiate(prefab);
+        }
+
+        private void LoadSaveData()
+        {
+            _saveSystem.Load();
         }
 
         private void InitializeObjectPools()

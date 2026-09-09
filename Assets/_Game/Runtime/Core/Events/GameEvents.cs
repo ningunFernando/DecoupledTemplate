@@ -32,6 +32,19 @@ namespace DecoupledTemplate.Core
 
     #endregion
 
-    // TODO(Fase-4): OnProgressChanged is declared here once ProgressService exists to publish it.
-    // Events nobody emits yet stay out (section 6.2 of the guide).
+    // ────────────────────────────────
+    // PROGRESS EVENTS
+    // ────────────────────────────────
+    #region Progress Events
+
+    /// <summary>
+    /// Published by ProgressService after any mutation of the saved progress.
+    /// </summary>
+    public struct OnProgressChanged
+    {
+        public int currency;
+        public int totalEarned;
+    }
+
+    #endregion
 }
