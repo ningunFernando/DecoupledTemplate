@@ -99,6 +99,12 @@ es una decisión pendiente, no un paso de la plantilla.
 - **Los movimientos y renombrados de `.cs` se hacen con el Editor de Unity abierto**, nunca desde el
   filesystem. Unity preserva los GUID de los `.meta` al mover dentro del Editor; por terminal se
   rompen las referencias de escenas y prefabs y aparece "Missing Script".
+- **No desuscribir `SceneManager.sceneLoaded` en el `OnDestroy` del `Bootstrapper`.** Cargar la escena
+  de juego descarga `Scene_Bootstrap`, y eso destruye el `Bootstrapper` antes de que Unity dispare el
+  evento: un `OnDestroy` que desuscribe deja la secuencia muda, la escena cambia pero `StartGame()`
+  nunca corre y no hay ni un error en la consola que lo delate. El handler se desuscribe a sí mismo
+  como primera línea y con eso basta para no dejar el evento estático colgado. Bug real encontrado al
+  probar en Play Mode el 2026-09-08.
 - **Todo lo que se escriba tiene un call site y un test que lo ejecuta.** El defecto central de
   HamsterBall fue código con apariencia de terminado que nunca se ejecutó: `EventBus` con 3
   `Publish` y 0 `Subscribe`, `SaveSystem.Save()` con 0 call sites, `ObjectPoolManager.Get()` con 0.

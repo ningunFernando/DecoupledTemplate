@@ -43,12 +43,6 @@ namespace DecoupledTemplate.Core
             StartCoroutine(InitializeSequence());
         }
 
-        private void OnDestroy()
-        {
-            // sceneLoaded is static: without this the handler would outlive the bootstrap scene.
-            SceneManager.sceneLoaded -= OnGameSceneLoaded;
-        }
-
         #endregion
 
         // ────────────────────────────────
@@ -154,7 +148,14 @@ namespace DecoupledTemplate.Core
 
         private void OnGameSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            // Self-unsubscribing here is what keeps the static event clean: loading the game
+            // scene unloads Scene_Bootstrap and destroys this object before the callback fires,
+            // so an OnDestroy doing the same job would remove the handler right before Unity
+            // invokes it. The DontDestroyOnLoad managers outlive the scene; if Play Mode was
+            // stopped mid-load the reference is gone and there is nothing left to launch.
             SceneManager.sceneLoaded -= OnGameSceneLoaded;
+
+            if (_gameManager == null) return;
 
             Log.Trace($"[Bootstrapper] {scene.name} loaded. Launching game.");
 
