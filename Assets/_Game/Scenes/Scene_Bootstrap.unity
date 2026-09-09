@@ -151,7 +151,7 @@ MonoBehaviour:
   _gameManagerPrefab: {fileID: 8051352002030213058, guid: 1c4385fc8e11945a4bb3a5c45bffe86d, type: 3}
   _poolManagerPrefab: {fileID: 7798064693214946108, guid: 80873981f10d6479081ae1e0caa94cfc, type: 3}
   _gameConfig: {fileID: 11400000, guid: 0226c66bb597349f1aece4c18cb8ab9d, type: 2}
-  _saveSystemPrefab: {fileID: 0}
+  _saveSystemPrefab: {fileID: 178974345132901639, guid: 3be9fb3e9820247719cd559b5895d529, type: 3}
 --- !u!4 &1994235659
 Transform:
   m_ObjectHideFlags: 0
