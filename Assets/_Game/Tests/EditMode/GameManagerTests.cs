@@ -41,6 +41,9 @@ namespace DecoupledTemplate.Tests
         {
             if (_hostObject != null) UnityEngine.Object.DestroyImmediate(_hostObject);
 
+            // PausedState writes a global; a failed pause test must not slow down every later one.
+            Time.timeScale = 1f;
+
             EventBus.ClearAllSubscriptions();
         }
 
@@ -119,6 +122,45 @@ namespace DecoupledTemplate.Tests
             Assert.AreEqual(GameState.Play, _gameManager.CurrentState);
 
             EventBus.Unsubscribe(sink);
+        }
+
+        [Test]
+        public void TogglePause_FromPlay_PausesTimeAndSecondToggleRestoresPreviousScale()
+        {
+            Action<OnGameStateChanged> sink = _ => { };
+            EventBus.Subscribe(sink);
+
+            // Not 1 on purpose: resuming must restore what was there, not assume normal speed.
+            Time.timeScale = 0.5f;
+
+            _gameManager.ChangeState(GameState.Play);
+            _gameManager.TogglePause();
+
+            Assert.AreEqual(GameState.Paused, _gameManager.CurrentState);
+            Assert.AreEqual(0f, Time.timeScale, "PausedState did not freeze scaled time.");
+
+            _gameManager.TogglePause();
+
+            Assert.AreEqual(GameState.Play, _gameManager.CurrentState);
+            Assert.AreEqual(0.5f, Time.timeScale, "Leaving PausedState did not restore the previous time scale.");
+
+            EventBus.Unsubscribe(sink);
+        }
+
+        [Test]
+        public void TogglePause_InMenu_IsIgnoredAndPublishesNothing()
+        {
+            int count = 0;
+            Action<OnGameStateChanged> handler = _ => count++;
+
+            EventBus.Subscribe(handler);
+
+            _gameManager.TogglePause();
+
+            Assert.AreEqual(GameState.Menu, _gameManager.CurrentState);
+            Assert.AreEqual(0, count, "A pause request in the menu changed the state.");
+
+            EventBus.Unsubscribe(handler);
         }
 
         [Test]

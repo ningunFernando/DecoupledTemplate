@@ -18,13 +18,15 @@ suavizado, nunca Cinemachine y script en cascada).
 **Materializado en el Paso 1 (decisión de Fernando, 2026-09-08): la plantilla tiene 7 assemblies, no
 las 8 de la guía.** No existen `Assets/_Game/Runtime/CameraRig/` ni `DecoupledTemplate.Camera.asmdef`.
 Toda verificación que en la guía diga `→ 8` (el Paso 1 y el *Definition of Done*) se lee `→ 7` aquí.
+**Actualización del 2026-09-14:** con `DecoupledTemplate.Pickups` (ver "Más allá de la guía") vuelven a
+ser 8, así que la cuenta coincide otra vez con la guía, pero no las assemblies: hay `Pickups`, no `Camera`.
 Si se añade cámara, entra como hoja nueva del grafo (referencia a `Core`+`Data`, y solo `Debug` y
 `Tests` la referencian) y hay que actualizar estas cuentas.
 
 ## Placeholders fijados (sección 2 de la guía)
 
 `{Project}` = `{ROOT_NS}` = `{ASM}` = **`DecoupledTemplate`**, coherente con el nombre del repo. Las
-7 assemblies son `DecoupledTemplate.{Core,Data,Player,Save,Debug,Tests.EditMode,Tests.PlayMode}` y el
+8 assemblies son `DecoupledTemplate.{Core,Data,Player,Save,Pickups,Debug,Tests.EditMode,Tests.PlayMode}` y el
 `rootNamespace` de cada una es `DecoupledTemplate.<Módulo>` (`DecoupledTemplate.Tests` en las dos de
 tests). Decisión del 2026-09-08 tomada sabiendo que renombrar obliga a regenerar los proyectos y a
 tocar todas las referencias: no cambiar a la ligera. La guía pide anotarlos en el `README.md`, que
@@ -85,7 +87,8 @@ es una decisión pendiente, no un paso de la plantilla.
   adelante sin decidir antes qué hacer con esos `.meta` (ya habrán asignado GUID).
 - **Qwen Code se arranca desde la raíz del repo**, no desde `Assets/`, para que este archivo,
   `.qwenignore` y `.qwen/` vivan donde tocan y la memoria de proyecto tenga una clave estable.
-- **Sin `Runtime/CameraRig/` ni `{ASM}.Camera`**: 7 assemblies. Ver "Alcance acordado" arriba.
+- **Sin `Runtime/CameraRig/` ni `{ASM}.Camera`.** Ver "Alcance acordado" arriba. Desde el 2026-09-14
+  hay 8 assemblies por `Runtime/Pickups/`, que no está en la sección 4 de la guía.
 - **Sin `Art/`, `Audio/`, `Shading/` ni `_Game/Settings/`.** La sección 4 de la guía los dibuja, pero
   ningún paso los llena nunca, y `Assets/Settings/` ya existe con los assets de URP: un segundo
   `Settings/` vacío solo invita a dudar de cuál manda. Una carpeta vacía es la versión-carpeta de los
@@ -324,6 +327,55 @@ estructura, cómo correr los tests con su cuenta y duración, y cómo renombrar 
 nuevo). `.gitignore` y `.qwenignore` ya cumplían. Con esto están hechos los 8 pasos de la guía, dentro
 del alcance acordado (sin cámara).
 
+**Más allá de la guía, 2026-09-14: pausa y ciclo de recolección.** Una revisión del runtime (sin contar
+tests) mostró que tres sistemas solo corrían dentro de los tests: el pool (`Get` y `Return` sin ninguna
+llamada y 0 pools configurados), el guardado (nada mutaba el progreso, así que `save.json` no se
+escribía nunca) y la pausa (nada pedía `Paused`). Es justo el defecto central de HamsterBall que la
+sección 1 de la guía prohíbe. Decisión de Fernando: resolverlo con un ciclo mínimo de recolección
+(opción A), aunque roce el "nada de gameplay específico".
+
+- **Pausa.** Acción `Player/Pause` (Esc y Start) → `PlayerInputReader` publica `OnPauseRequested` →
+  `GameManager.TogglePause` alterna `Play` y `Paused`, y en cualquier otro estado la ignora con
+  `Log.Info` (su primer call site) → `PausedState` pone `Time.timeScale` a 0 y al salir restaura el
+  valor anterior. El input sigue llegando porque corre en tiempo sin escalar.
+- **Recolección.** Assembly nueva `DecoupledTemplate.Pickups`, que solo referencia `Core` y `Data`. Con
+  ella la plantilla vuelve a tener 8 assemblies, aunque no las de la guía (hay `Pickups`, no `Camera`).
+  `PickupSpawner` saca un `Pickup` del pool por cada punto al llegar `OnBootstrapComplete`; cuando el
+  jugador (tag `Player`) lo toca, lo devuelve, programa su reaparición con `RespawnQueue` (C# puro, en
+  tiempo escalado, así que se detiene en pausa) y publica `OnPickupCollected`. `SaveSystem` lo convierte
+  en moneda con `ProgressService.Earn` y guarda al entrar en `Paused` si hay cambios. El HUD muestra la
+  moneda desde `OnProgressChanged`. `Pickup.prefab` y el pool `Pickup` (4 objetos) están en `Prefabs/`.
+- **Bug real encontrado: los managers morían con `Scene_Bootstrap`.** Solo `GameManager` se marcaba con
+  `DontDestroyOnLoad`. `ObjectPoolManager` y `SaveSystem` se destruían al cargar `Scene_Game`: el pool
+  no existía durante el juego, y `OnApplicationPause` y `OnApplicationQuit` del save nunca corrían. El
+  test de arranque no lo detectaba porque usaba `Assert.IsNotNull`, que no ve un `UnityEngine.Object`
+  destruido. Ahora el `Bootstrapper` marca con `DontDestroyOnLoad` todo lo que instancia, y el test usa
+  la comparación de Unity y comprueba que `SaveSystem` sobrevive. **Regla para cualquier test: con
+  objetos de Unity, `Assert.IsTrue(obj != null)`, nunca `Assert.IsNotNull(obj)`.**
+- **Tests:** 70 en EditMode (2.7 s) y 12 en PlayMode (4.6 s). Nuevos: `TogglePause` en
+  `GameManagerTests` (con un `timeScale` previo de 0.5, para probar que se restaura y no se asume 1),
+  moneda en `DebugHudModelTests`, `RespawnQueueTests`, `PauseFlowTests` (Esc con teclado virtual pausa,
+  congela al jugador y reanuda) y `PickupFlowTests` (recoger da moneda, el pickup vuelve al pool y
+  reaparece en su punto, y pausar escribe el save, redirigido a una carpeta temporal para no tocar el
+  real). Los tests que pausan restauran `Time.timeScale` en su `TearDown`: un fallo a mitad de pausa
+  congelaría todos los tests siguientes.
+- **Verificado en Play Mode desde `Scene_Bootstrap`:** pool vivo, un solo `SaveSystem`, 4 pickups en sus
+  puntos, pausa y reanudación por el bus con `timeScale` 0 y 1, y cero errores y cero warnings, también
+  al salir de Play. Con frames avanzados a mano (ver la nota siguiente), el ciclo completo en una partida
+  real: recoger sube la moneda a 1 y el HUD la muestra, pausar escribe `save.json` en disco
+  (`{"saveVersion":1,"currency":1,"totalEarned":1}`, el primer save que la plantilla ha escrito nunca) y
+  el pickup reaparece en su punto a los 2 s de juego. Esc enviado con `input_key` a la Game view no llega
+  al Input System (son eventos de ventana del Editor), así que la tecla física solo está cubierta por el
+  test con teclado virtual.
+- **`Run In Background` está desactivado en *Player Settings*.** Con Unity sin foco, Play Mode no avanza
+  ni un frame aunque figure como en marcha: una prueba manual lanzada desde la terminal se queda en `Menu`
+  sin ningún error. Para verificar sin foco hay que avanzar frames con `play_mode_step`, que deja warnings
+  internos de Unity (`JobTempAlloc ... older than 4 frames`) que no salen jugando normal. Los tests no se
+  ven afectados. Decisión abierta: activarlo si se quiere que el juego siga corriendo sin foco en
+  escritorio.
+- `ProjectSettings/TimeManager.asset` cambió solo: Unity 6.6 reserializó `Fixed Timestep` como fracción
+  (2822399/141120000 = 0.02). Es el mismo valor, del mismo tipo de cambio que ya se commiteó en `59713b4`.
+
 ### Pendientes
 
 1. **La guía existe dos veces** (`Assets/Docs/` aquí y `HamsterBall/Docs/`). La autoritativa es la de
@@ -331,9 +383,8 @@ del alcance acordado (sin cámara).
    `.qwenignore` y `Assets/Docs/` quedó resuelto por Fernando en el commit `2e4ed28`.)
 2. **Resuelto el 2026-09-13.** `OnBootstrapComplete` y `OnGameStateChanged` ya tienen suscriptor
    (`DebugHud`), y Play Mode desde `Scene_Bootstrap` sale sin warnings.
-3. **`Log.Info` todavía no tiene ningún call site.** Es la única pieza escrita hasta ahora sin
-   consumidor. Se mantiene porque §6.1 especifica los cuatro niveles del wrapper; inventarle una
-   llamada para cumplir la regla sería justo el código decorativo que la guía critica.
+3. **Resuelto el 2026-09-14.** `Log.Info` tiene su primer call site real: `GameManager.TogglePause`
+   cuando ignora una petición de pausa fuera de `Play` o `Paused`.
 4. **Resuelto el 2026-09-14: el constraint de `Debug` funciona en builds reales.** Dos builds de macOS
    (Mono) con `isuzu-unity-cli`, escritos fuera del repo, y cada uno ejecutado sin ventana
    (`-batchmode -nographics`) unos 15 s para leer el log del player:
@@ -343,6 +394,9 @@ del alcance acordado (sin cámara).
      dos consecuencias esperadas: `The referenced script on this Behaviour (Game Object 'DebugHud') is
      missing!` y `[EventBus] Published OnBootstrapComplete with no subscribers.`, porque en release
      nadie más escucha ese evento. `OnGameStateChanged` no avisa: lo escucha `PlayerInputReader`.
+     **Rehecho tras la pausa y la recolección:** el build de release ya no muestra ese warning, porque
+     `PickupSpawner` también escucha `OnBootstrapComplete`. Sigue el aviso del script ausente de
+     `DebugHud`, y el player carga el `save.json` escrito desde el Editor (moneda 1).
    - `DEVELOPMENT_BUILD` en `defineConstraints` no dispara `UAC0009` en ninguna compilación (cero
      apariciones en `Logs/Editor.log`), así que se deja como está.
    - Los 628 warnings del build son prácticamente todos de shaders de `com.unity.ai.inference` (Sentis),

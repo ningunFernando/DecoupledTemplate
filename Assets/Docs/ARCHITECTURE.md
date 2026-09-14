@@ -15,36 +15,38 @@ se aparta de la guía, lo dice.
 
 ## Assemblies
 
-Siete assemblies (la guía dibuja ocho: aquí no hay `Camera`, ver `QWEN.md`). Todas usan el prefijo
-`DecoupledTemplate` y su namespace raíz coincide con el nombre de la assembly.
+Ocho assemblies. La guía también dibuja ocho, pero no las mismas: aquí no hay `Camera` (fuera del
+alcance acordado) y sí hay `Pickups`, el módulo mínimo que da uso real al pool y al guardado. Todas
+usan el prefijo `DecoupledTemplate` y su namespace raíz coincide con el nombre de la assembly.
 
 | Assembly | Referencia | Contenido |
 |---|---|---|
 | `Data` | nada | ScriptableObjects de configuración (`GameConfigSO`) |
-| `Core` | `Data` | `Log`, `EventBus` y eventos, `GameManager`, state machine, `Bootstrapper`, pool de objetos, contrato `ISaveLifecycle` |
-| `Save` | `Core`, `Data` | Guardado en tres capas: almacenamiento, dominio y adapter |
-| `Player` | `Core`, `Data`, `Unity.InputSystem` | Lectura de input y movimiento del jugador |
+| `Core` | `Data` | `Log`, `EventBus` y eventos, `GameManager` y estados (pausa incluida), `Bootstrapper`, pool de objetos, contrato `ISaveLifecycle` |
+| `Save` | `Core`, `Data` | Guardado en tres capas; convierte recolecciones en progreso y guarda al pausar |
+| `Player` | `Core`, `Data`, `Unity.InputSystem` | Input (movimiento y pausa) y movimiento del jugador |
+| `Pickups` | `Core`, `Data` | Objetos recolectables que salen del pool y vuelven a él |
 | `Debug` | `Core`, `Data`, `Player` | HUD de desarrollo. Solo compila con `UNITY_EDITOR \|\| DEVELOPMENT_BUILD` |
-| `Tests.EditMode` | `Core`, `Data`, `Save`, `Player`, `Debug` | Tests de lógica pura, solo Editor |
-| `Tests.PlayMode` | `Core`, `Data`, `Save`, `Player`, `Debug`, `Unity.InputSystem` | Tests de extremo a extremo con escenas reales |
+| `Tests.EditMode` | `Core`, `Data`, `Save`, `Player`, `Debug`, `Pickups` | Tests de lógica pura, solo Editor |
+| `Tests.PlayMode` | `Core`, `Data`, `Save`, `Player`, `Debug`, `Pickups`, `Unity.InputSystem` | Tests de extremo a extremo con escenas reales |
 
 ```
-   Debug         Tests.EditMode      Tests.PlayMode
-     │                 │                   │
-     ├─────────────────┼───────────────────┤
-     ↓                 ↓                   ↓
-   Player            Save            (Player, Save)
-     │                 │
-     └────────┬────────┘
-              ↓
-            Core
-              ↓
-            Data
+   Debug              Tests.EditMode / Tests.PlayMode
+     │                 (referencian todos los módulos)
+     ↓
+   Player          Save          Pickups
+     │               │              │
+     └───────────────┼──────────────┘
+                     ↓
+                   Core
+                     ↓
+                   Data
 ```
 
 Reglas del grafo (R3): `Data` no referencia nada del proyecto; `Core` solo a `Data`; los módulos de
-gameplay (`Player`, `Save`) referencian `Core` y `Data` y **nunca entre sí**; `Debug` y los tests son
-hojas. Si `Player` necesita algo de `Save`, o al revés, la respuesta es un evento, no una referencia.
+gameplay (`Player`, `Save`, `Pickups`) referencian `Core` y `Data` y **nunca entre sí**; `Debug` y los
+tests son hojas. Cuando un módulo necesita a otro, la respuesta es un evento: `Pickups` no sabe que
+`Save` existe, solo publica `OnPickupCollected`.
 
 Dos consecuencias que no se ven a simple vista:
 
@@ -71,9 +73,9 @@ sequenceDiagram
 
     B->>B: ValidateConfiguration (lanza si falta algo)
     B->>Bus: ClearAllSubscriptions
-    B->>GM: Instantiate (singleton, DontDestroyOnLoad, estado Menu)
-    B->>P: Instantiate
-    B->>S: Instantiate y GetComponent<ISaveLifecycle>
+    B->>GM: Instantiate + DontDestroyOnLoad (estado Menu)
+    B->>P: Instantiate + DontDestroyOnLoad
+    B->>S: Instantiate + DontDestroyOnLoad y GetComponent<ISaveLifecycle>
     Note over B: yield un frame
     B->>S: Load
     Note over B: yield un frame
@@ -91,6 +93,10 @@ Puntos del diseño que tienen un porqué concreto:
 
 - **Validar antes de instanciar.** Una configuración incompleta lanza excepción al principio, no a
   mitad de la secuencia con los managers ya vivos (R9, A3).
+- **El `Bootstrapper` es dueño de la vida de los managers** y los marca con `DontDestroyOnLoad` al
+  crearlos. Cargar `Scene_Game` destruye todo lo que quede en `Scene_Bootstrap`: cuando solo
+  `GameManager` se marcaba a sí mismo, el pool y el guardado morían en ese momento y las referencias a
+  ellos seguían pareciendo asignadas.
 - **`ClearAllSubscriptions` solo aquí**, antes de instanciar nada, para que ningún suscriptor
   persistente quede sordo tras recargar una escena (A1).
 - **El handler de `sceneLoaded` se desuscribe a sí mismo.** No se hace en `OnDestroy`: cargar
@@ -98,8 +104,9 @@ Puntos del diseño que tienen un porqué concreto:
   desuscribe deja el juego sin arrancar y sin ningún error en la consola.
 - **`OnBootstrapComplete` se publica al cargar la escena, no al final de la secuencia**, porque los
   objetos de `Scene_Game` se suscriben en su `OnEnable` durante esa carga (R10).
-- **Inyección explícita (R6).** El `Bootstrapper` conserva lo que instancia y se lo pasa a quien lo
-  necesita; nada del runtime usa `FindAnyObjectByType`.
+- **Inyección explícita (R6).** El `Bootstrapper` conserva lo que instancia y se lo pasa a
+  `GameManager`; los objetos de escena leen el pool de `GameManager.PoolManager` cuando llega
+  `OnBootstrapComplete`. Nada del runtime usa `FindAnyObjectByType`.
 
 ### Entrar en Play desde otra escena
 
@@ -116,9 +123,31 @@ suscriptores, lo que hace visible un bus decorativo (A1). Las suscripciones se h
 
 | Evento | Lo publica | Lo escuchan |
 |---|---|---|
-| `OnBootstrapComplete` | `Bootstrapper`, al cargar `Scene_Game` | `DebugHud` |
-| `OnGameStateChanged` | `GameManager`, solo si la transición cambió el estado | `DebugHud`, `PlayerInputReader` |
-| `OnProgressChanged` | `ProgressService`, tras mutar el progreso | `SaveSystem` (marca el save como sucio) |
+| `OnBootstrapComplete` | `Bootstrapper`, al cargar `Scene_Game` | `DebugHud`, `PickupSpawner` |
+| `OnGameStateChanged` | `GameManager`, solo si la transición cambió el estado | `DebugHud`, `PlayerInputReader`, `SaveSystem` (guarda al entrar en `Paused`) |
+| `OnPauseRequested` | `PlayerInputReader`, con Esc o Start | `GameManager` (alterna `Play` y `Paused`) |
+| `OnPickupCollected` | `PickupSpawner`, cuando el jugador toca un pickup | `SaveSystem` (lo convierte en moneda) |
+| `OnProgressChanged` | `ProgressService`, tras mutar el progreso | `SaveSystem` (marca el save como sucio), `DebugHud` |
+
+### El ciclo de recolección
+
+Es el único recorrido que ejercita a la vez el pool, el bus, el guardado y el HUD en tiempo de juego:
+
+```mermaid
+flowchart LR
+    Pool[ObjectPoolManager] -->|Get| Spawner[PickupSpawner]
+    Spawner -->|coloca| Pickup
+    Player -->|toca| Pickup
+    Pickup -->|Collect| Spawner
+    Spawner -->|Return y RespawnQueue| Pool
+    Spawner -->|OnPickupCollected| Save[SaveSystem]
+    Save -->|Earn| Progress[ProgressService]
+    Progress -->|OnProgressChanged| Save
+    Progress -->|OnProgressChanged| HUD[DebugHud]
+```
+
+`SaveSystem` escribe el archivo al entrar en `Paused` (si hay cambios), además de en
+`OnApplicationPause(true)` y `OnApplicationQuit`.
 
 ## Módulos
 
@@ -129,8 +158,12 @@ suscriptores, lo que hace visible un bus decorativo (A1). Las suscripciones se h
 - **`GameManager` y la state machine**: el estado actual se deriva de la máquina en cada lectura,
   nunca se guarda en un segundo campo (R7). Pedir un estado sin implementación (`GameOver`) registra
   un error y no muta nada.
+- **Pausa**: `GameManager.TogglePause` alterna `Play` y `Paused` cuando llega `OnPauseRequested`; en
+  cualquier otro estado la petición se ignora. `PausedState` pone `Time.timeScale` a 0 y al salir
+  restaura el valor anterior. El input sigue llegando durante la pausa porque corre en tiempo sin
+  escalar; la física, `FixedUpdate` y los temporizadores con `deltaTime` se detienen.
 - **`ObjectPoolManager`**: los objetos salen activos también cuando el pool se expande, y devolver dos
-  veces el mismo objeto se ignora con un aviso (C1, M3).
+  veces el mismo objeto se ignora con un aviso (C1, M3). Hoy tiene un pool, `Pickup`, con 4 objetos.
 
 ### Save
 
@@ -138,47 +171,64 @@ suscriptores, lo que hace visible un bus decorativo (A1). Las suscripciones se h
 |---|---|---|
 | Infraestructura | `ISaveStorage`, `JsonSaveStorage` | Leer y escribir disco con escritura transaccional (`.tmp` y luego mover) |
 | Dominio | `ProgressService`, `SaveMigrations`, `SaveData` | Mutar el progreso validando invariantes; migrar versiones en cadena |
-| Adapter | `SaveSystem` | Ciclo de vida de Unity: `persistentDataPath`, `OnApplicationPause` |
+| Adapter | `SaveSystem` | Ciclo de vida de Unity: `persistentDataPath`, pausa del juego y de la aplicación, eventos del bus |
 
 El save lleva `saveVersion` desde el primer día y se migra, nunca se borra: antes de migrar se hace
-backup (R14). `OnApplicationPause(true)` es el disparador principal de guardado, porque
-`OnApplicationQuit` no es fiable en móvil (C6).
+backup (R14). `OnApplicationPause(true)` es el disparador de guardado de plataforma, porque
+`OnApplicationQuit` no es fiable en móvil (C6); la pausa del juego es el punto de guardado dentro de la
+partida.
 
 ### Player
 
 | Tipo | Clase | Responsabilidad |
 |---|---|---|
-| Adapter de input | `PlayerInputReader` | Lee `Player/Move` por `InputActionReference`, suscrito a `performed` y `canceled` (M9). Solo deja pasar input en estado `Play`, que conoce por `OnGameStateChanged` |
+| Adapter de input | `PlayerInputReader` | Lee `Player/Move` y `Player/Pause` por `InputActionReference` (M9). Solo deja pasar el movimiento en estado `Play`, que conoce por `OnGameStateChanged`; la pausa la publica como petición |
 | Dominio | `PlayerMovement` | Calcula la velocidad horizontal con `Vector3.SmoothDamp` (M2). Recorta el input a longitud 1 y rechaza valores negativos o NaN |
 | Adapter físico | `PlayerMover` | En `FixedUpdate` aplica esa velocidad al `Rigidbody` y conserva la vertical para la gravedad |
 
-`PlayerMover` valida sus referencias y valores en `OnValidate` y otra vez en `Awake` (R8); si algo
-falta, registra el error y se deshabilita en lugar de fallar en cada paso de física (R9). En
-`Scene_Game` el `Player` es una cápsula con rotación congelada e interpolación, sobre un plano.
+Los adapters validan sus referencias y valores en `OnValidate` y otra vez en `Awake` (R8); si algo
+falta, registran el error y se deshabilitan (R9). Ojo con un detalle de Unity: `enabled = false`
+dentro de `Awake` llama a `OnDisable` en el acto, antes de cualquier `OnEnable`, así que cada
+`OnDisable` solo deshace lo que su `OnEnable` hizo de verdad. En `Scene_Game` el `Player` es una
+cápsula con el tag `Player`, rotación congelada e interpolación, sobre un plano.
+
+### Pickups
+
+| Tipo | Clase | Responsabilidad |
+|---|---|---|
+| Adapter | `PickupSpawner` | Mantiene un pickup en cada punto: los saca del pool al llegar `OnBootstrapComplete`, los devuelve al recogerlos y publica `OnPickupCollected`. Al desactivarse devuelve los suyos, porque viven bajo el contenedor `DontDestroyOnLoad` del pool |
+| Adapter | `Pickup` | Trigger con valor (mínimo 1). Detecta al jugador por el tag del `Rigidbody` y avisa a su spawner, que se le asigna en cada salida del pool (`IPoolable`) |
+| Dominio | `RespawnQueue` | Qué puntos esperan reaparición y cuánto falta. Un `Tick` sin tiempo transcurrido no libera nada, que es lo que la detiene en pausa |
+
+Entrar en Play directamente desde `Scene_Game` no hace aparecer pickups: sin bootstrap no hay pool.
 
 ### Debug
 
 `DebugHud` usa **UI Toolkit** (la guía pide Canvas con TextMeshPro; la decisión está en `QWEN.md`).
 Un `UIDocument` con `PanelSettings_DebugHud` y un `Label` creado por código muestra si terminó el
-bootstrap y el estado actual. La lógica del texto vive en `DebugHudModel`, en C# puro. Como el
-`Label` lo crea el script, en un build sin la assembly `Debug` el `UIDocument` queda vacío.
+bootstrap, el estado actual y la moneda (desde el primer `OnProgressChanged`). La lógica del texto
+vive en `DebugHudModel`, en C# puro. Como el `Label` lo crea el script, en un build sin la assembly
+`Debug` el `UIDocument` queda vacío.
 
 En un build de release, además, el log del player avisa de que el componente `DebugHud` no tiene
-script, y `OnBootstrapComplete` sale con el warning de evento sin suscriptores, porque su único oyente
-es el HUD. Las dos cosas son esperadas (comprobado con builds reales el 2026-09-14).
+script. Es lo esperado: la assembly `Debug` no entra en ese build (comprobado con builds reales el
+2026-09-14). `OnBootstrapComplete` no avisa de falta de suscriptores porque también lo escucha
+`PickupSpawner`; antes del ciclo de recolección ese warning sí salía en release.
 
 ## Tests
 
 Los tests forman parte de la plantilla: cubren los bugs reales de la auditoría y demuestran que los
 sistemas están conectados.
 
-- **EditMode** (lógica pura, milisegundos): `EventBus`, state machine, `GameManager`, pool, save
-  (almacenamiento, migraciones, progreso), regla de la escena de entrada, texto del HUD y
-  movimiento del jugador, incluido que se sienta igual a 30 y a 120 fps.
-- **PlayMode** (escenas reales): el arranque completo desde `Scene_Bootstrap`, que el HUD reciba los
-  eventos, el error al entrar desde `Scene_Game`, y que un teclado virtual mueva al jugador solo en
-  estado `Play` y lo detenga al soltar la tecla. También que `PlayerMover` y `PlayerInputReader`
-  se deshabiliten con un error claro si les falta configuración.
+- **EditMode** (lógica pura, milisegundos): `EventBus`, state machine, `GameManager` (pausa incluida),
+  pool, save (almacenamiento, migraciones, progreso), regla de la escena de entrada, texto del HUD,
+  movimiento del jugador (incluido que se sienta igual a 30 y a 120 fps) y `RespawnQueue`.
+- **PlayMode** (escenas reales): el arranque completo desde `Scene_Bootstrap` y que los managers
+  sobrevivan a él, que el HUD reciba los eventos, el error al entrar desde `Scene_Game`, un teclado
+  virtual que mueve al jugador solo en `Play` y lo detiene al soltar, Esc que pausa, congela al jugador
+  y reanuda, y el ciclo de recolección completo, con el save redirigido a un archivo temporal. También
+  que `PlayerMover` y `PlayerInputReader` se deshabiliten con un error claro si les falta
+  configuración.
 
 El número de tests y su duración están en el `README.md`.
 

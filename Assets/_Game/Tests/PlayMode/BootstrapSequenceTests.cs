@@ -76,8 +76,13 @@ namespace DecoupledTemplate.Tests
             Assert.AreNotEqual(BootstrapScene, SceneManager.GetActiveScene().name,
                 "The game scene was never loaded.");
 
-            Assert.IsNotNull(GameManager.Instance.PoolManager,
-                "The pool manager was never injected (R6).");
+            // Unity's null check, not NUnit's: a destroyed manager is still a non-null C# reference, and
+            // IsNotNull kept passing while the pool was destroyed together with Scene_Bootstrap.
+            Assert.IsTrue(GameManager.Instance.PoolManager != null,
+                "The pool manager was never injected (R6), or it was destroyed with the bootstrap scene.");
+
+            Assert.AreEqual(1, Object.FindObjectsByType<SaveSystem>().Length,
+                "The save system did not survive the load of the game scene.");
         }
 
         [UnityTest]

@@ -30,6 +30,14 @@ namespace DecoupledTemplate.Core
         public GameState newState;
     }
 
+    /// <summary>
+    /// Published by the input owner when the player asks to pause or resume. Only a request:
+    /// GameManager decides whether the current state allows it.
+    /// </summary>
+    public struct OnPauseRequested
+    {
+    }
+
     #endregion
 
     // ────────────────────────────────
@@ -44,6 +52,22 @@ namespace DecoupledTemplate.Core
     {
         public int currency;
         public int totalEarned;
+    }
+
+    #endregion
+
+    // ────────────────────────────────
+    // PICKUP EVENTS
+    // ────────────────────────────────
+    #region Pickup Events
+
+    /// <summary>
+    /// Published by PickupSpawner when the player collects a pickup. Save turns it into currency;
+    /// the Pickups module never learns what the value is used for (R4).
+    /// </summary>
+    public struct OnPickupCollected
+    {
+        public int value;
     }
 
     #endregion

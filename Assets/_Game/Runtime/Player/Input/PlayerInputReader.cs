@@ -6,10 +6,11 @@ using DecoupledTemplate.Core.State;
 namespace DecoupledTemplate.Player
 {
     /// <summary>
-    /// The one owner of player input (R11). Reads a serialized InputActionReference instead of
+    /// The one owner of player input (R11). Reads serialized InputActionReferences instead of
     /// PlayerInput in Send Messages mode, where renaming a handler breaks input with no compile
-    /// error and no warning (M9). Input only counts while the game is in Play, and the reader
-    /// learns the state from the bus instead of asking GameManager (R4).
+    /// error and no warning (M9). Move only counts while the game is in Play, a state the reader
+    /// learns from the bus instead of asking GameManager (R4). Pause is only a request: GameManager
+    /// decides whether the current state allows it.
     /// </summary>
     public class PlayerInputReader : MonoBehaviour
     {
@@ -21,6 +22,8 @@ namespace DecoupledTemplate.Player
         [Header("Input")]
         [Tooltip("Vector2 action that moves the player, e.g. Player/Move in InputSystem_Actions.")]
         [SerializeField] private InputActionReference _moveAction;
+        [Tooltip("Button action that pauses and resumes the game, e.g. Player/Pause in InputSystem_Actions.")]
+        [SerializeField] private InputActionReference _pauseAction;
 
         #endregion
 
@@ -45,14 +48,24 @@ namespace DecoupledTemplate.Player
 
         private void Awake()
         {
-            if (_moveAction == null || _moveAction.action == null)
+            bool isValid = true;
+
+            if (!IsAssigned(_moveAction))
             {
-                // Disabled rather than left running without input (R9). Setting enabled here keeps
-                // OnEnable from running, but Unity calls OnDisable on the spot, which is why OnDisable
-                // only undoes what OnEnable actually did.
                 Log.Error("[PlayerInputReader] Move action not assigned. Input is disabled.");
-                enabled = false;
+                isValid = false;
             }
+
+            if (!IsAssigned(_pauseAction))
+            {
+                Log.Error("[PlayerInputReader] Pause action not assigned. Input is disabled.");
+                isValid = false;
+            }
+
+            // Disabled rather than left running without input (R9). Setting enabled here keeps
+            // OnEnable from running, but Unity calls OnDisable on the spot, which is why OnDisable
+            // only undoes what OnEnable actually did.
+            if (!isValid) enabled = false;
         }
 
         private void OnEnable()
@@ -61,6 +74,9 @@ namespace DecoupledTemplate.Player
             // Without canceled the last value sticks after the key is released.
             _moveAction.action.canceled  += OnMove;
             _moveAction.action.Enable();
+
+            _pauseAction.action.performed += OnPause;
+            _pauseAction.action.Enable();
 
             EventBus.Subscribe<OnGameStateChanged>(HandleGameStateChanged);
 
@@ -76,6 +92,9 @@ namespace DecoupledTemplate.Player
             _moveAction.action.performed -= OnMove;
             _moveAction.action.canceled  -= OnMove;
             _moveAction.action.Disable();
+
+            _pauseAction.action.performed -= OnPause;
+            _pauseAction.action.Disable();
 
             _rawMove      = Vector2.zero;
             _isSubscribed = false;
@@ -93,9 +112,26 @@ namespace DecoupledTemplate.Player
             _rawMove = context.ReadValue<Vector2>();
         }
 
+        private void OnPause(InputAction.CallbackContext context)
+        {
+            EventBus.Publish(new OnPauseRequested());
+        }
+
         private void HandleGameStateChanged(OnGameStateChanged e)
         {
             _isPlaying = e.newState == GameState.Play;
+        }
+
+        #endregion
+
+        // ────────────────────────────────
+        // PRIVATE
+        // ────────────────────────────────
+        #region Private
+
+        private static bool IsAssigned(InputActionReference reference)
+        {
+            return reference != null && reference.action != null;
         }
 
         #endregion

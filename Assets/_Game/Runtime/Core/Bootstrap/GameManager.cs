@@ -47,6 +47,18 @@ namespace DecoupledTemplate.Core
             InitializeStates();
         }
 
+        private void OnEnable()
+        {
+            EventBus.Subscribe<OnPauseRequested>(HandlePauseRequested);
+        }
+
+        private void OnDisable()
+        {
+            // Also runs straight away on the duplicate path, where Awake disables this instance before
+            // any OnEnable; removing a handler that was never added leaves the bus untouched.
+            EventBus.Unsubscribe<OnPauseRequested>(HandlePauseRequested);
+        }
+
         private void Update()
         {
             _stateMachine?.Tick();
@@ -145,6 +157,40 @@ namespace DecoupledTemplate.Core
                 previousState = previous,
                 newState = newState
             });
+        }
+
+        /// <summary>
+        /// Play and Paused toggle into each other. Any other state ignores the request, so the menu or
+        /// an unfinished bootstrap can never be paused into a state with no way back to Play.
+        /// </summary>
+        public void TogglePause()
+        {
+            switch (CurrentState)
+            {
+                case GameState.Play:
+                    ChangeState(GameState.Paused);
+                    break;
+
+                case GameState.Paused:
+                    ChangeState(GameState.Play);
+                    break;
+
+                default:
+                    Log.Info($"[GameManager] Pause request ignored in state {CurrentState}.");
+                    break;
+            }
+        }
+
+        #endregion
+
+        // ────────────────────────────────
+        // EVENT HANDLERS
+        // ────────────────────────────────
+        #region Event Handlers
+
+        private void HandlePauseRequested(OnPauseRequested e)
+        {
+            TogglePause();
         }
 
         #endregion

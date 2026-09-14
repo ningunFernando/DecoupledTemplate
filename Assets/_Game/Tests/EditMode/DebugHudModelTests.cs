@@ -58,6 +58,24 @@ namespace DecoupledTemplate.Tests
             StringAssert.Contains("State: Bootstrap", model.Text);
         }
 
+        [Test]
+        public void Text_BeforeAnyProgress_ShowsUnknownCurrency()
+        {
+            StringAssert.Contains("Currency: unknown", new DebugHudModel().Text);
+        }
+
+        [Test]
+        public void SetCurrency_Twice_ShowsLatestValue()
+        {
+            var model = new DebugHudModel();
+
+            model.SetCurrency(3);
+            model.SetCurrency(0);
+
+            // Zero is a real balance, not "unknown".
+            StringAssert.Contains("Currency: 0", model.Text);
+        }
+
         #endregion
     }
 }

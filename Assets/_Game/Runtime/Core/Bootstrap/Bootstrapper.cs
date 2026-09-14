@@ -144,7 +144,21 @@ namespace DecoupledTemplate.Core
                 throw new InvalidOperationException($"[Bootstrapper] {label} prefab not assigned.");
             }
 
-            return Instantiate(prefab);
+            T instance = Instantiate(prefab);
+
+            GameObject root = instance is Component component ? component.gameObject : instance as GameObject;
+
+            if (root == null)
+            {
+                throw new InvalidOperationException($"[Bootstrapper] {label} is neither a GameObject nor a component.");
+            }
+
+            // The bootstrap owns manager lifetime: LoadScene destroys everything left in
+            // Scene_Bootstrap. Only GameManager used to mark itself, so the pool and the save system
+            // died with the bootstrap scene while the references to them still looked assigned.
+            DontDestroyOnLoad(root);
+
+            return instance;
         }
 
         private void LoadSaveData()

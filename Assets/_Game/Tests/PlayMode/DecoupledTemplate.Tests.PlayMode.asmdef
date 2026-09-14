@@ -7,6 +7,7 @@
         "DecoupledTemplate.Save",
         "DecoupledTemplate.Player",
         "DecoupledTemplate.Debug",
+        "DecoupledTemplate.Pickups",
         "Unity.InputSystem",
         "UnityEngine.TestRunner"
     ],

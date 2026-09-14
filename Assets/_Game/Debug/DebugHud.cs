@@ -42,12 +42,14 @@ namespace DecoupledTemplate.Debug
 
             EventBus.Subscribe<OnBootstrapComplete>(HandleBootstrapComplete);
             EventBus.Subscribe<OnGameStateChanged>(HandleGameStateChanged);
+            EventBus.Subscribe<OnProgressChanged>(HandleProgressChanged);
         }
 
         private void OnDisable()
         {
             EventBus.Unsubscribe<OnBootstrapComplete>(HandleBootstrapComplete);
             EventBus.Unsubscribe<OnGameStateChanged>(HandleGameStateChanged);
+            EventBus.Unsubscribe<OnProgressChanged>(HandleProgressChanged);
 
             _label?.RemoveFromHierarchy();
             _label = null;
@@ -69,6 +71,12 @@ namespace DecoupledTemplate.Debug
         private void HandleGameStateChanged(OnGameStateChanged e)
         {
             _model.SetState(e.newState);
+            Refresh();
+        }
+
+        private void HandleProgressChanged(OnProgressChanged e)
+        {
+            _model.SetCurrency(e.currency);
             Refresh();
         }
 

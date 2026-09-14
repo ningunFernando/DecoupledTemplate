@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using UnityEngine;
 using DecoupledTemplate.Core;
+using DecoupledTemplate.Core.State;
 
 namespace DecoupledTemplate.Save
 {
@@ -47,11 +48,15 @@ namespace DecoupledTemplate.Save
         private void OnEnable()
         {
             EventBus.Subscribe<OnProgressChanged>(MarkDirty);
+            EventBus.Subscribe<OnPickupCollected>(HandlePickupCollected);
+            EventBus.Subscribe<OnGameStateChanged>(HandleGameStateChanged);
         }
 
         private void OnDisable()
         {
             EventBus.Unsubscribe<OnProgressChanged>(MarkDirty);
+            EventBus.Unsubscribe<OnPickupCollected>(HandlePickupCollected);
+            EventBus.Unsubscribe<OnGameStateChanged>(HandleGameStateChanged);
         }
 
         /// <summary>
@@ -101,7 +106,7 @@ namespace DecoupledTemplate.Save
             _progress = new ProgressService(_data);
             _dirty = false;
 
-            Log.Trace($"[SaveSystem] Loaded save v{_data.saveVersion}.");
+            Log.Trace($"[SaveSystem] Loaded save v{_data.saveVersion} with currency {_data.currency}.");
         }
 
         public void Save()
@@ -117,7 +122,45 @@ namespace DecoupledTemplate.Save
             _storage.Save(_data);
             _dirty = false;
 
-            Log.Trace("[SaveSystem] Save written.");
+            Log.Trace($"[SaveSystem] Save written with currency {_data.currency}.");
+        }
+
+        #endregion
+
+        // ────────────────────────────────
+        // EVENT HANDLERS
+        // ────────────────────────────────
+        #region Event Handlers
+
+        private void MarkDirty(OnProgressChanged e)
+        {
+            _dirty = true;
+        }
+
+        /// <summary>
+        /// Save owns progress, so it is the module that turns a collected pickup into currency; the
+        /// Pickups module only reports what happened (R4). Earn publishes OnProgressChanged, which
+        /// marks the save dirty through MarkDirty like any other mutation.
+        /// </summary>
+        private void HandlePickupCollected(OnPickupCollected e)
+        {
+            if (_progress == null)
+            {
+                // Nothing was mutated, so the save stays consistent; the error names the ordering bug.
+                Log.Error("[SaveSystem] Pickup collected before Load. Currency not granted.");
+                return;
+            }
+
+            _progress.Earn(e.value);
+        }
+
+        /// <summary>
+        /// Pausing is a checkpoint the player chose and, unlike quitting, it is delivered on every
+        /// platform, so it is where the in-game save happens.
+        /// </summary>
+        private void HandleGameStateChanged(OnGameStateChanged e)
+        {
+            if (e.newState == GameState.Paused) SaveIfDirty();
         }
 
         #endregion
@@ -126,11 +169,6 @@ namespace DecoupledTemplate.Save
         // PRIVATE
         // ────────────────────────────────
         #region Private
-
-        private void MarkDirty(OnProgressChanged e)
-        {
-            _dirty = true;
-        }
 
         private SaveData LoadMigrated(SaveData stored)
         {

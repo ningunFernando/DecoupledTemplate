@@ -11,8 +11,10 @@ namespace DecoupledTemplate.Debug
         private bool       _bootstrapComplete;
 
         // Nullable on purpose: GameState.Bootstrap is a real value GameManager reports, so it
-        // cannot double as "no state change received yet".
+        // cannot double as "no state change received yet". Currency follows the same rule, since
+        // zero is a real balance.
         private GameState? _state;
+        private int?       _currency;
 
         // ────────────────────────────────
         // PUBLIC API
@@ -21,7 +23,8 @@ namespace DecoupledTemplate.Debug
 
         public string Text =>
             $"Bootstrap: {(_bootstrapComplete ? "complete" : "pending")}\n" +
-            $"State: {(_state.HasValue ? _state.Value.ToString() : "unknown")}";
+            $"State: {(_state.HasValue ? _state.Value.ToString() : "unknown")}\n" +
+            $"Currency: {(_currency.HasValue ? _currency.Value.ToString() : "unknown")}";
 
         public void MarkBootstrapComplete()
         {
@@ -31,6 +34,11 @@ namespace DecoupledTemplate.Debug
         public void SetState(GameState state)
         {
             _state = state;
+        }
+
+        public void SetCurrency(int currency)
+        {
+            _currency = currency;
         }
 
         #endregion
