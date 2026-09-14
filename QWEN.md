@@ -267,6 +267,63 @@ y cero warnings** (desaparecen los dos `Published ... with no subscribers`), y e
 arriba: `Scene_Bootstrap` ya está en el índice 0 de Build Settings y `DebugHud` ya está en
 `Scene_Game`. Desde `Scene_Game` directamente no explota, y desde el mismo día da un error claro (pendiente 5).
 
+**Paso 5 completado el 2026-09-14: `Player` en 3D con `Rigidbody`.** Decisión de Fernando: 3D en el
+plano XZ, `Rigidbody`, teclado y gamepad, sin control táctil por ahora. Tres clases en
+`DecoupledTemplate.Player`, que ahora referencia `Unity.InputSystem`:
+
+- `PlayerInputReader` (`Runtime/Player/Input/`): lee `Player/Move` de `InputSystem_Actions` por
+  `InputActionReference`, suscrito a `performed` y a `canceled` (§6.8). Solo deja pasar input en
+  estado `Play`, que conoce por `OnGameStateChanged` (R4); es el segundo suscriptor real de ese
+  evento. Si falta la referencia, registra el error y se deshabilita en `Awake` (R9).
+- `PlayerMovement` (C# puro): velocidad horizontal con `Vector3.SmoothDamp` (§6.9), input recortado a
+  longitud 1 y constructor que rechaza negativos y NaN.
+- `PlayerMover` (adapter): en `FixedUpdate` escribe la velocidad horizontal del `Rigidbody` y conserva
+  la vertical para la gravedad. Valida en `OnValidate` y otra vez en `Awake` (R8); con datos
+  inválidos registra el error y se deshabilita.
+
+En `Scene_Game`: `Ground` (plano de 50 x 50 m) y `Player` (cápsula en y = 1, rotación congelada,
+interpolación), con la cámara en (0, 8, -10) inclinada 35 grados. Tests: `PlayerMovementTests` (9, en
+EditMode; el de frame rate compara 30 y 120 fps con una tolerancia calculada simulando la fórmula de
+`SmoothDamp`: difiere 0.012 m/s, frente a 0.38 del `Lerp` del reference) y `PlayerMoverTests` (2, en
+PlayMode, con teclado virtual: mantener W mueve al jugador y soltarla lo detiene, pero solo en `Play`;
+sin bootstrap no se mueve).
+
+Dos detalles que no se ven en el código:
+
+- **Teclado virtual en tests.** Por defecto el Input System solo entrega teclado a la Game view con
+  foco, y una corrida lanzada desde terminal nunca lo tiene: las pulsaciones se pierden sin aviso. El
+  test pone `editorInputBehaviorInPlayMode = AllDeviceInputAlwaysGoesToGameView` y lo restaura en
+  `TearDown`.
+- **`InputSystem_Actions` son las acciones de todo el proyecto** (project-wide), que Unity ya habilita
+  al arrancar. `PlayerInputReader` sigue §6.8 y deshabilita `Player/Move` en `OnDisable`: si algún día
+  otro sistema lee esa misma acción, destruir al jugador se la apagaría.
+
+**Paso 6 completado el 2026-09-14.** `Scene_Game` tiene cámara, luz, suelo, `Player` y `DebugHud` (sin
+Cinemachine, por el alcance acordado). Verificado en Play Mode: desde `Scene_Bootstrap`, cero errores
+y cero warnings, con el jugador quieto en (0, 1, 0); desde `Scene_Game`, solo el error del guard. Cero
+referencias rotas en las escenas y en los 87 assets de `_Game`.
+
+**Paso 7 al día el 2026-09-14:** 59 tests en EditMode (2.5 s) y 9 en PlayMode (2.0 s), con los 10
+mínimos de la guía. Tres de PlayMode cubren la rama de error de `PlayerMover` y `PlayerInputReader`
+(R9), y el de `PlayerInputReader` encontró un bug real: **en Unity, `enabled = false` dentro de `Awake`
+llama a `OnDisable` en el acto**, antes de que haya corrido ningún `OnEnable`. Ese `OnDisable`
+desreferenciaba la acción que faltaba y lanzaba una `NullReferenceException` justo después del error
+claro. Ahora solo deshace lo que `OnEnable` hizo de verdad (`_isSubscribed`). Regla para cualquier
+`MonoBehaviour` que se deshabilite en `Awake`: su `OnDisable` no puede suponer que `OnEnable` corrió.
+
+**Definition of Done cerrado el 2026-09-14.** Los 10 checks por comando en verde: 7 asmdefs, 39 de 39
+archivos con namespace, `Subscribe` solo dentro de `OnEnable`, prefijos de log iguales al nombre de su
+clase. El grafo de assemblies se comprobó con `CompilationPipeline` en lugar de la ventana *Assembly
+Dependencies* y coincide con la sección 4. Los puntos del Editor también: EditMode y PlayMode en verde,
+Play desde `Scene_Bootstrap` sin errores ni warnings, Play desde `Scene_Game` con un error claro, cero
+referencias rotas, `Scene_Bootstrap` en el índice 0 y el development build compilado (pendiente 4).
+
+**Paso 8 completado el 2026-09-14.** `Assets/Docs/ARCHITECTURE.md` (grafo, flujo de arranque, eventos,
+módulos, tests y resumen de reglas) y `README.md` en la raíz (requisitos, cómo abrir y jugar,
+estructura, cómo correr los tests con su cuenta y duración, y cómo renombrar la plantilla para un juego
+nuevo). `.gitignore` y `.qwenignore` ya cumplían. Con esto están hechos los 8 pasos de la guía, dentro
+del alcance acordado (sin cámara).
+
 ### Pendientes
 
 1. **La guía existe dos veces** (`Assets/Docs/` aquí y `HamsterBall/Docs/`). La autoritativa es la de
@@ -277,12 +334,23 @@ arriba: `Scene_Bootstrap` ya está en el índice 0 de Build Settings y `DebugHud
 3. **`Log.Info` todavía no tiene ningún call site.** Es la única pieza escrita hasta ahora sin
    consumidor. Se mantiene porque §6.1 especifica los cuatro niveles del wrapper; inventarle una
    llamada para cumplir la regla sería justo el código decorativo que la guía critica.
-4. **El `defineConstraints` del asmdef de `Debug` usa `DEVELOPMENT_BUILD`**, el símbolo deprecado de
-   `UAC0009`. Desde el 2026-09-13 la assembly tiene scripts y compila en el Editor con cero warnings,
-   así que el constraint no dispara `UAC0009` ahí. Sigue sin comprobar el development build real: que
-   el constraint se cumpla y el HUD no quede fuera en silencio. En el mismo build conviene mirar el de
-   release, donde lo esperado es que el componente `DebugHud` de `Scene_Game` quede como script
-   ausente y Unity lo avise en el log del player. El último punto del *Definition of Done* lo pide.
+4. **Resuelto el 2026-09-14: el constraint de `Debug` funciona en builds reales.** Dos builds de macOS
+   (Mono) con `isuzu-unity-cli`, escritos fuera del repo, y cada uno ejecutado sin ventana
+   (`-batchmode -nographics`) unos 15 s para leer el log del player:
+   - **Development** (44 s de build): incluye `DecoupledTemplate.Debug.dll`, y la secuencia sale
+     completa y sin warnings.
+   - **Release** (15 s): no incluye `DecoupledTemplate.Debug.dll`, que es lo buscado. El log confirma las
+     dos consecuencias esperadas: `The referenced script on this Behaviour (Game Object 'DebugHud') is
+     missing!` y `[EventBus] Published OnBootstrapComplete with no subscribers.`, porque en release
+     nadie más escucha ese evento. `OnGameStateChanged` no avisa: lo escucha `PlayerInputReader`.
+   - `DEVELOPMENT_BUILD` en `defineConstraints` no dispara `UAC0009` en ninguna compilación (cero
+     apariciones en `Logs/Editor.log`), así que se deja como está.
+   - Los 628 warnings del build son prácticamente todos de shaders de `com.unity.ai.inference` (Sentis),
+     uno de los paquetes preinstalados que la guía no quiere. Nada de la plantilla, pero es un argumento
+     más para la decisión pendiente de quitarlo.
+   - Con `DECOUPLEDTEMPLATE_VERBOSE` definido para Standalone, `Log.Trace` también compila en release y
+     el log del player sale con toda la secuencia. Si no se quiere eso en release, hay que quitar el
+     símbolo de *Player Settings* antes de hacer el build.
 5. **Resuelto el 2026-09-13: Play Mode desde `Scene_Game` da un error claro.** Antes degradaba en
    silencio (consola vacía, HUD en `pending`/`unknown`). Ahora `Bootstrapper.CheckEntryScene`, con
    `[RuntimeInitializeOnLoadMethod(AfterSceneLoad)]`, registra un `Log.Error` si la primera escena
@@ -302,14 +370,29 @@ arriba: `Scene_Bootstrap` ya está en el índice 0 de Build Settings y `DebugHud
      Mode manual, desde `Scene_Game` sale un solo error y nada más, y desde `Scene_Bootstrap` cero
      errores y cero warnings.
 
-### Anotado para el Paso 5 (no antes: sería adelantar trabajo)
+6. **Una corrida de PlayMode puede informar 0 tests y parecer verde.** El proyecto tiene las *Enter Play
+   Mode Options* activadas desde el primer commit (`m_EnterPlayModeOptions: 3`: sin recarga de dominio
+   ni de escena). Comprobado el 2026-09-14: tras entrar en Play con `play_mode_play` de Unity MCP,
+   `verify --test --test-mode play` ejecuta 0 tests hasta la siguiente recarga de dominio (recarga: 6
+   tests; Play manual: 0; otra recarga: 6). No se probó con el botón de Play ni desde la ventana del
+   Test Runner. Solución de uso, anotada en el README: forzar `EditorUtility.RequestScriptReload()`
+   antes. Decisión abierta: mantener las opciones (entrar en Play es mucho más rápido) o desactivarlas.
+   Mientras sigan activadas, los estáticos sobreviven entre sesiones de Play: hoy lo aguantan `EventBus`
+   (lo limpia el `Bootstrapper`) y `GameManager.Instance` (se anula en `OnDestroy`), y cualquier estático
+   nuevo tiene que resetearse igual.
+7. **Los tests de PlayMode no compilarían en un player sin development build.** `Tests.PlayMode`
+   referencia `Debug` (`BootstrapSequenceTests` lee el HUD), y en un build de release esa assembly no
+   existe. Solo afecta a correr los tests de PlayMode en un player, que se hace con development build;
+   en el Editor no pasa nada. Deducido del grafo, no comprobado con un build de tests. Se deja así.
 
-- **Faltan las referencias a paquetes en `Player`.** Se respetó al pie de la letra la plantilla 4.1,
-  que solo referencia assemblies del proyecto. En cuanto exista `PlayerInputReader`, `Player` necesita
-  `Unity.InputSystem`. Sin ella el fallo es un `CS0246` despistado, porque el `autoReferenced` de un
-  paquete solo afecta a las assemblies predefinidas de Unity (`Assembly-CSharp`), no a las nuestras.
-  Nombre verificado en `Library/PackageCache`. (Lo de `Debug` con `Unity.TextMeshPro` y
-  `UnityEngine.UI` ya no aplica: el HUD usa UI Toolkit.)
+### Notas para el trabajo siguiente
+
+- **Referencias a paquetes en los asmdef.** El `autoReferenced` de un paquete solo afecta a las
+  assemblies predefinidas de Unity (`Assembly-CSharp`), no a las nuestras: cualquier tipo de un paquete
+  nuevo necesita su referencia explícita (como `Unity.InputSystem` en `Player`) o da un `CS0246`
+  despistado.
+- **Control táctil sin decidir.** Si el juego acaba siendo para móvil en vertical (Fernando prueba en
+  1080x1920), ojo: el `OnScreenStick` del Input System funciona sobre UGUI, no sobre UI Toolkit.
 - **`namespace DecoupledTemplate.Debug` sombrea `UnityEngine.Debug`.** Dentro de ese namespace,
   `Debug.Log(...)` resuelve al namespace y da `CS0118`. R13 (todo logging por `Log.cs`) lo hace
   improbable. Ojo: los dos asmdef de tests ya referencian `Debug`, así que un `Debug.Log` sin calificar

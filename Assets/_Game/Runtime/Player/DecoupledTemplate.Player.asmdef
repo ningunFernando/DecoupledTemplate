@@ -3,7 +3,8 @@
     "rootNamespace": "DecoupledTemplate.Player",
     "references": [
         "DecoupledTemplate.Core",
-        "DecoupledTemplate.Data"
+        "DecoupledTemplate.Data",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
