@@ -3,9 +3,11 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
+using UnityEngine.UIElements;
 using DecoupledTemplate.Core;
 using DecoupledTemplate.Core.Pool;
 using DecoupledTemplate.Core.State;
+using DecoupledTemplate.Debug;
 using DecoupledTemplate.Save;
 
 namespace DecoupledTemplate.Tests
@@ -54,16 +56,7 @@ namespace DecoupledTemplate.Tests
         [UnityTest]
         public IEnumerator Bootstrap_FromBootstrapScene_ReachesGameSceneInPlayState()
         {
-            SceneManager.LoadScene(BootstrapScene);
-            yield return null;
-
-            int frames = 0;
-
-            while (frames < MaxFrames && !HasStarted())
-            {
-                frames++;
-                yield return null;
-            }
+            yield return BootAndWaitForPlay();
 
             Assert.IsNotNull(GameManager.Instance,
                 $"No GameManager after {MaxFrames} frames. The sequence never instantiated the managers.");
@@ -81,12 +74,47 @@ namespace DecoupledTemplate.Tests
                 "The pool manager was never injected (R6).");
         }
 
+        [UnityTest]
+        public IEnumerator Bootstrap_FromBootstrapScene_DebugHudShowsCompletedSequence()
+        {
+            yield return BootAndWaitForPlay();
+
+            Assert.IsTrue(HasStarted(), "The game never reached Play, so the HUD has nothing to show.");
+
+            DebugHud[] huds = Object.FindObjectsByType<DebugHud>();
+            Assert.AreEqual(1, huds.Length, "The game scene must hold exactly one DebugHud.");
+
+            Label label = huds[0].GetComponent<UIDocument>().rootVisualElement.Q<Label>(DebugHud.LABEL_NAME);
+
+            // Missing means UIDocument rebuilt its root after DebugHud.OnEnable added the label.
+            Assert.IsNotNull(label, "The HUD label is not in the UIDocument tree.");
+
+            // Both events are published from the sceneLoaded handler, while the HUD is a scene
+            // object that subscribed in OnEnable during that same load (R10).
+            StringAssert.Contains("Bootstrap: complete", label.text, "OnBootstrapComplete never reached the HUD.");
+            StringAssert.Contains("State: Play", label.text, "OnGameStateChanged never reached the HUD.");
+        }
+
         #endregion
 
         // ────────────────────────────────
         // HELPERS
         // ────────────────────────────────
         #region Helpers
+
+        private static IEnumerator BootAndWaitForPlay()
+        {
+            SceneManager.LoadScene(BootstrapScene);
+            yield return null;
+
+            int frames = 0;
+
+            while (frames < MaxFrames && !HasStarted())
+            {
+                frames++;
+                yield return null;
+            }
+        }
 
         private static bool HasStarted() =>
             GameManager.Instance != null && GameManager.Instance.CurrentState == GameState.Play;

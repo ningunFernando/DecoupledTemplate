@@ -225,31 +225,72 @@ paso 1 y el 2. Todavía no se escribe `save.json` en disco: nada muta el progres
 activa, y eso es lo correcto. El round-trip de escritura y migración lo prueban los tests del Paso 7
 contra una carpeta temporal.
 
+**Paso 5 empezado el 2026-09-13: `DebugHud` hecho, falta `Player`.** En `Assets/_Game/Debug/`:
+`DebugHudModel` (C# puro que arma el texto, testeable en EditMode sin panel ni Play Mode, R5),
+`DebugHud` (adapter: se suscribe en `OnEnable` a `OnBootstrapComplete` y `OnGameStateChanged` y
+actualiza un `Label`), y `PanelSettings_DebugHud.asset` con su tema `UnityDefaultRuntimeTheme.tss`.
+En `Scene_Game` hay un GameObject `DebugHud` con `UIDocument` y `DebugHud`. Tests: 4 nuevos en
+`DebugHudModelTests` y uno de PlayMode que arranca desde `Scene_Bootstrap` y lee el `Label`. Total:
+46 EditMode y 2 PlayMode, todo en verde.
+
+**Decisión de Fernando (2026-09-13): el HUD usa UI Toolkit, no Canvas + TextMeshPro** como dice el
+Paso 5 de la guía. La intención de la guía (no usar `OnGUI`, M5) se cumple igual, porque UI Toolkit
+es de modo retenido y no redibuja por frame. A cambio: `Debug` no necesita referencias a paquetes (es
+un módulo del motor), no hay que importar TMP Essentials, y el `Label` lo crea el script, así que en
+un build sin la assembly `Debug` el `UIDocument` queda vacío y no se ve nada. `OnGUI` sigue prohibido.
+
+Detalle que sostiene el diseño: `UIDocument` reconstruye su árbol en su propio `OnEnable` y descarta
+lo que se haya añadido antes. `DebugHud` añade el `Label` en su `OnEnable` y funciona porque
+`UIDocument` declara `[DefaultExecutionOrder(-100)]`, comprobado por reflexión en `6000.6.0f1`. Si una
+versión futura lo cambia, el test de PlayMode del HUD falla.
+
+**Escala del HUD (2026-09-13).** `PanelSettings_DebugHud` usa `ScaleWithScreenSize` con referencia
+1080x1920 y `match` 0.5, y el `Label` usa fuente de 32 puntos. Al crear el asset por código había
+quedado en `ConstantPhysicalSize` con `referenceDpi` 257, el DPI de la pantalla Retina donde se creó:
+medido en 1080x1920, el texto salía a 10.5 px y ocupaba el 1.6% del alto. Medido tras el cambio: 32 px
+y 4.4% del alto en vertical 1080x1920; 37.4 px y 9.1% en horizontal 1920x1080. En UI Toolkit `match`
+interpola en lineal, no en logarítmico como el `CanvasScaler` de UGUI, así que el mismo tamaño no se ve
+igual en las dos orientaciones (escala 1.0 frente a 1.17). Si el juego va a ser horizontal, bajar la
+fuente o subir `match` hacia 1 (escala por el alto). `referenceDpi` quedó en 96 para que volver a
+`ConstantPhysicalSize` no herede el 257.
+
+**Verificado en Play Mode el 2026-09-13.** Desde `Scene_Bootstrap`: 18 líneas de log, **cero errores
+y cero warnings** (desaparecen los dos `Published ... with no subscribers`), y el HUD muestra
+`Bootstrap: complete` y `State: Play`. Con eso quedan hechos también dos restos del Paso 6 anotados
+arriba: `Scene_Bootstrap` ya está en el índice 0 de Build Settings y `DebugHud` ya está en
+`Scene_Game`. Desde `Scene_Game` directamente no explota, pero tampoco da un error claro (pendiente 5).
+
 ### Pendientes
 
 1. **La guía existe dos veces** (`Assets/Docs/` aquí y `HamsterBall/Docs/`). La autoritativa es la de
    este repo; si se edita, la otra diverge en silencio. (El pendiente de rastrear `QWEN.md`,
    `.qwenignore` y `Assets/Docs/` quedó resuelto por Fernando en el commit `2e4ed28`.)
-2. **`OnBootstrapComplete` no tiene suscriptores**, y `Publish` avisa cuando no los hay (§6.2). Eso
-   choca con la verificación del Paso 6 ("sin errores ni warnings"). La salida limpia es que
-   `DebugHud` se suscriba a él en el Paso 5; la otra es aceptar el warning.
+2. **Resuelto el 2026-09-13.** `OnBootstrapComplete` y `OnGameStateChanged` ya tienen suscriptor
+   (`DebugHud`), y Play Mode desde `Scene_Bootstrap` sale sin warnings.
 3. **`Log.Info` todavía no tiene ningún call site.** Es la única pieza escrita hasta ahora sin
    consumidor. Se mantiene porque §6.1 especifica los cuatro niveles del wrapper; inventarle una
    llamada para cumplir la regla sería justo el código decorativo que la guía critica.
-4. **El `defineConstraints` del asmdef de `Debug` usa `DEVELOPMENT_BUILD`**, el símbolo deprecado que
-   dispara `UAC0009`. Como esa assembly aún no tiene scripts no se compila y no avisa, pero en cuanto
-   exista `DebugHud.cs` puede pasar algo peor que un warning: que el constraint no se cumpla en un
-   development build y el HUD quede fuera en silencio. Verificar con un development build real (el
-   último punto del *Definition of Done* ya lo pide) antes de cambiarlo a ciegas.
+4. **El `defineConstraints` del asmdef de `Debug` usa `DEVELOPMENT_BUILD`**, el símbolo deprecado de
+   `UAC0009`. Desde el 2026-09-13 la assembly tiene scripts y compila en el Editor con cero warnings,
+   así que el constraint no dispara `UAC0009` ahí. Sigue sin comprobar el development build real: que
+   el constraint se cumpla y el HUD no quede fuera en silencio. En el mismo build conviene mirar el de
+   release, donde lo esperado es que el componente `DebugHud` de `Scene_Game` quede como script
+   ausente y Unity lo avise en el log del player. El último punto del *Definition of Done* lo pide.
+5. **Play Mode desde `Scene_Game` directamente degrada en silencio.** No hay NRE ni error: la consola
+   queda vacía y la única señal es el HUD con `Bootstrap: pending` y `State: unknown`. El *Definition
+   of Done* pide un error claro. Opción barata, sin decidir: que `DebugHud.Start` registre un
+   `Log.Error` si para entonces no llegó `OnBootstrapComplete` (verificar antes que `sceneLoaded` se
+   dispara antes de `Start`, que es lo que haría que arrancando desde `Scene_Bootstrap` ya haya llegado).
 
 ### Anotado para el Paso 5 (no antes: sería adelantar trabajo)
 
-- **Faltan las referencias a paquetes.** Se respetó al pie de la letra la plantilla 4.1, que solo
-  referencia assemblies del proyecto. En cuanto exista `PlayerInputReader`, `Player` necesita
-  `Unity.InputSystem`; en cuanto exista `DebugHud`, `Debug` necesita `Unity.TextMeshPro` y
-  `UnityEngine.UI`. Sin ellas el fallo es un `CS0246` despistado, porque el `autoReferenced` de un
+- **Faltan las referencias a paquetes en `Player`.** Se respetó al pie de la letra la plantilla 4.1,
+  que solo referencia assemblies del proyecto. En cuanto exista `PlayerInputReader`, `Player` necesita
+  `Unity.InputSystem`. Sin ella el fallo es un `CS0246` despistado, porque el `autoReferenced` de un
   paquete solo afecta a las assemblies predefinidas de Unity (`Assembly-CSharp`), no a las nuestras.
-  Nombres verificados en `Library/PackageCache`.
+  Nombre verificado en `Library/PackageCache`. (Lo de `Debug` con `Unity.TextMeshPro` y
+  `UnityEngine.UI` ya no aplica: el HUD usa UI Toolkit.)
 - **`namespace DecoupledTemplate.Debug` sombrea `UnityEngine.Debug`.** Dentro de ese namespace,
   `Debug.Log(...)` resuelve al namespace y da `CS0118`. R13 (todo logging por `Log.cs`) lo hace
-  improbable, pero es una razón más para que `DebugHud` no llame a `Debug.*` directamente.
+  improbable. Ojo: los dos asmdef de tests ya referencian `Debug`, así que un `Debug.Log` sin calificar
+  dentro de `DecoupledTemplate.Tests` también daría `CS0118`.

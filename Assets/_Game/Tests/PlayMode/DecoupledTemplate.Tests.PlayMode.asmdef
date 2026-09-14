@@ -6,6 +6,7 @@
         "DecoupledTemplate.Data",
         "DecoupledTemplate.Save",
         "DecoupledTemplate.Player",
+        "DecoupledTemplate.Debug",
         "UnityEngine.TestRunner"
     ],
     "includePlatforms": [],
