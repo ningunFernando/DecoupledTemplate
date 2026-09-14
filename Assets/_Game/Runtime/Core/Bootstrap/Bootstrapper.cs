@@ -192,5 +192,41 @@ namespace DecoupledTemplate.Core
         }
 
         #endregion
+
+        // ────────────────────────────────
+        // ENTRY SCENE GUARD
+        // ────────────────────────────────
+        #region Entry Scene Guard
+
+        private const string TEST_RUNNER_SCENE_PREFIX = "InitTestScene";
+
+        /// <summary>
+        /// Entering Play Mode from a game scene skips the bootstrap: no managers, no events, and
+        /// otherwise nothing in the console to say why.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void CheckEntryScene()
+        {
+            Scene scene = SceneManager.GetActiveScene();
+
+            if (!DependsOnBootstrap(scene.buildIndex, scene.name)) return;
+
+            Log.Error($"[Bootstrapper] Play Mode started in '{scene.name}', which depends on the bootstrap. " +
+                      $"Nothing was initialized: enter Play Mode from '{SceneUtility.GetScenePathByBuildIndex(0)}'.");
+        }
+
+        /// <summary>
+        /// Build index 0 is the bootstrap and every other scene in the build depends on it. Scenes
+        /// outside the build (index -1) are sandboxes and are left alone. The Test Runner's
+        /// InitTestScene is excluded by name: during a PlayMode run it reports a positive build
+        /// index (seen on 6000.6.0f1 with Test Framework 1.8.0), so without this every run would
+        /// start with an error.
+        /// </summary>
+        private static bool DependsOnBootstrap(int buildIndex, string sceneName)
+        {
+            return buildIndex > 0 && !sceneName.StartsWith(TEST_RUNNER_SCENE_PREFIX, StringComparison.Ordinal);
+        }
+
+        #endregion
     }
 }

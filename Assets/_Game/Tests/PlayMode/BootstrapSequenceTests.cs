@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -20,6 +22,10 @@ namespace DecoupledTemplate.Tests
     public class BootstrapSequenceTests
     {
         private const string BootstrapScene = "Scene_Bootstrap";
+        private const string GameScene      = "Scene_Game";
+
+        private static readonly Regex NotFromBootstrap =
+            new Regex(@"^\[Bootstrapper\] Play Mode started in 'Scene_Game'");
 
         /// <summary>
         /// Generous on purpose. The sequence yields three frames and then loads a scene, so the
@@ -95,6 +101,34 @@ namespace DecoupledTemplate.Tests
             StringAssert.Contains("State: Play", label.text, "OnGameStateChanged never reached the HUD.");
         }
 
+        [UnityTest]
+        public IEnumerator EntryGuard_FromGameScene_LogsClearError()
+        {
+            SceneManager.LoadScene(GameScene);
+            yield return null;
+
+            LogAssert.Expect(LogType.Error, NotFromBootstrap);
+            InvokeEntryGuard();
+
+            // A few frames with no bootstrap behind the scene. Any NullReferenceException fails
+            // the test as an unexpected error: the "degrades, does not explode" half of the
+            // Definition of Done.
+            for (int i = 0; i < 5; i++) yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator EntryGuard_FromBootstrapScene_LogsNothing()
+        {
+            SceneManager.LoadScene(BootstrapScene);
+            yield return null;
+
+            // Any error logged by the guard fails the test as unexpected.
+            InvokeEntryGuard();
+
+            // Let the sequence finish, so no bootstrap coroutine is left running into the next test.
+            yield return WaitForPlay();
+        }
+
         #endregion
 
         // ────────────────────────────────
@@ -107,6 +141,11 @@ namespace DecoupledTemplate.Tests
             SceneManager.LoadScene(BootstrapScene);
             yield return null;
 
+            yield return WaitForPlay();
+        }
+
+        private static IEnumerator WaitForPlay()
+        {
             int frames = 0;
 
             while (frames < MaxFrames && !HasStarted())
@@ -118,6 +157,27 @@ namespace DecoupledTemplate.Tests
 
         private static bool HasStarted() =>
             GameManager.Instance != null && GameManager.Instance.CurrentState == GameState.Play;
+
+        /// <summary>
+        /// Unity calls the guard once per Play Mode session, before any test runs, so the tests
+        /// call it by hand. Checking the attribute is what proves Unity will call it for real.
+        /// </summary>
+        private static void InvokeEntryGuard()
+        {
+            MethodInfo method = typeof(Bootstrapper)
+                .GetMethod("CheckEntryScene", BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.IsNotNull(method,
+                "Bootstrapper.CheckEntryScene was renamed or removed. Update this test seam.");
+
+            var attribute = method.GetCustomAttribute<RuntimeInitializeOnLoadMethodAttribute>();
+
+            Assert.IsNotNull(attribute,
+                "CheckEntryScene lost [RuntimeInitializeOnLoadMethod], so Unity never runs it.");
+            Assert.AreEqual(RuntimeInitializeLoadType.AfterSceneLoad, attribute.loadType);
+
+            method.Invoke(null, null);
+        }
 
         private static void DestroyAll<T>(T[] components) where T : Component
         {

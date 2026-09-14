@@ -105,6 +105,13 @@ es una decisión pendiente, no un paso de la plantilla.
 - **Los movimientos y renombrados de `.cs` se hacen con el Editor de Unity abierto**, nunca desde el
   filesystem. Unity preserva los GUID de los `.meta` al mover dentro del Editor; por terminal se
   rompen las referencias de escenas y prefabs y aparece "Missing Script".
+- **Un `.cs` nuevo escrito desde fuera del Editor puede quedarse sin compilar y sin ningún aviso.**
+  Pasó el 2026-09-14 con `BootstrapperTests.cs`, creado mientras Unity recargaba el dominio: se importó
+  como `MonoScript` de la assembly correcta, pero Unity no lo metió en su lista de fuentes (ni
+  reimportarlo ni un build limpio lo arreglaron), así que no hubo error y la suite siguió en verde con
+  los tests viejos. Síntoma: la cuenta de tests no sube. **Después de añadir tests, comprobar siempre la
+  cuenta.** Arreglo que funcionó: renombrarlo y devolverle el nombre desde el Editor
+  (`AssetDatabase.MoveAsset` ida y vuelta), que conserva el GUID y fuerza el alta en la lista.
 - **No desuscribir `SceneManager.sceneLoaded` en el `OnDestroy` del `Bootstrapper`.** Cargar la escena
   de juego descarga `Scene_Bootstrap`, y eso destruye el `Bootstrapper` antes de que Unity dispare el
   evento: un `OnDestroy` que desuscribe deja la secuencia muda, la escena cambia pero `StartGame()`
@@ -231,7 +238,7 @@ contra una carpeta temporal.
 actualiza un `Label`), y `PanelSettings_DebugHud.asset` con su tema `UnityDefaultRuntimeTheme.tss`.
 En `Scene_Game` hay un GameObject `DebugHud` con `UIDocument` y `DebugHud`. Tests: 4 nuevos en
 `DebugHudModelTests` y uno de PlayMode que arranca desde `Scene_Bootstrap` y lee el `Label`. Total:
-46 EditMode y 2 PlayMode, todo en verde.
+46 EditMode y 2 PlayMode, todo en verde (tras el pendiente 5, el 2026-09-14: 50 y 4).
 
 **Decisión de Fernando (2026-09-13): el HUD usa UI Toolkit, no Canvas + TextMeshPro** como dice el
 Paso 5 de la guía. La intención de la guía (no usar `OnGUI`, M5) se cumple igual, porque UI Toolkit
@@ -258,7 +265,7 @@ fuente o subir `match` hacia 1 (escala por el alto). `referenceDpi` quedó en 96
 y cero warnings** (desaparecen los dos `Published ... with no subscribers`), y el HUD muestra
 `Bootstrap: complete` y `State: Play`. Con eso quedan hechos también dos restos del Paso 6 anotados
 arriba: `Scene_Bootstrap` ya está en el índice 0 de Build Settings y `DebugHud` ya está en
-`Scene_Game`. Desde `Scene_Game` directamente no explota, pero tampoco da un error claro (pendiente 5).
+`Scene_Game`. Desde `Scene_Game` directamente no explota, y desde el mismo día da un error claro (pendiente 5).
 
 ### Pendientes
 
@@ -276,11 +283,24 @@ arriba: `Scene_Bootstrap` ya está en el índice 0 de Build Settings y `DebugHud
    el constraint se cumpla y el HUD no quede fuera en silencio. En el mismo build conviene mirar el de
    release, donde lo esperado es que el componente `DebugHud` de `Scene_Game` quede como script
    ausente y Unity lo avise en el log del player. El último punto del *Definition of Done* lo pide.
-5. **Play Mode desde `Scene_Game` directamente degrada en silencio.** No hay NRE ni error: la consola
-   queda vacía y la única señal es el HUD con `Bootstrap: pending` y `State: unknown`. El *Definition
-   of Done* pide un error claro. Opción barata, sin decidir: que `DebugHud.Start` registre un
-   `Log.Error` si para entonces no llegó `OnBootstrapComplete` (verificar antes que `sceneLoaded` se
-   dispara antes de `Start`, que es lo que haría que arrancando desde `Scene_Bootstrap` ya haya llegado).
+5. **Resuelto el 2026-09-13: Play Mode desde `Scene_Game` da un error claro.** Antes degradaba en
+   silencio (consola vacía, HUD en `pending`/`unknown`). Ahora `Bootstrapper.CheckEntryScene`, con
+   `[RuntimeInitializeOnLoadMethod(AfterSceneLoad)]`, registra un `Log.Error` si la primera escena
+   cargada depende del bootstrap, y dice desde qué escena entrar. La regla vive en
+   `DependsOnBootstrap`: índice de build mayor que 0, salvo la escena del Test Runner. Se descartó
+   ponerlo en `DebugHud`: detectar el arranque es asunto del bootstrap, y así funciona en cualquier
+   escena y sin la assembly `Debug`.
+   - **Las escenas fuera del build (índice -1) no avisan a propósito**: son escenas de prueba sueltas.
+   - **La escena del Test Runner (`InitTestScene<guid>`) se excluye por nombre.** Durante una corrida
+     de PlayMode reporta un índice de build positivo (visto en `6000.6.0f1` con Test Framework 1.8.0).
+     La primera versión del guard suponía -1 y cada corrida empezaba con un error falso en la consola.
+   - Tests: `BootstrapperTests` (la regla, 4 casos, incluido `InitTestScene` con índice positivo),
+     `EntryGuard_FromGameScene_LogsClearError` (espera el error y ninguna excepción en los frames
+     siguientes) y `EntryGuard_FromBootstrapScene_LogsNothing`. Los dos de PlayMode comprueban además
+     que el atributo sigue puesto, porque invocan el método a mano.
+   - Verificado: tras la corrida de PlayMode la consola solo tiene el error que espera el test. En Play
+     Mode manual, desde `Scene_Game` sale un solo error y nada más, y desde `Scene_Bootstrap` cero
+     errores y cero warnings.
 
 ### Anotado para el Paso 5 (no antes: sería adelantar trabajo)
 
