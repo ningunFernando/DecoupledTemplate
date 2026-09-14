@@ -65,6 +65,12 @@ con la guía — no aporta nada a la arquitectura y rompe la Library.
 **Decisión: no instalar Cinemachine y no tocar `Packages/manifest.json`.** Consecuencia: si llega a
 existir un rig de cámara, `CameraRigTarget` es el dueño del suavizado, no Cinemachine.
 
+**Excepción (2026-09-13): `jp.shiranui-isuzu.unity-mcp` sí entra en `manifest.json`**, fijado por git
+URL a `#v4.3.3`. Es tooling para que los agentes (Claude Code, Qwen) manejen el Editor por MCP, no
+una dependencia del juego: todo vive en `Editor/` y no llega a ningún build. La regla de arriba sigue
+valiendo para paquetes de runtime. Subir de versión se hace cambiando el tag en el manifest (o con
+`isuzu-unity-cli update`), no a mano en `Library/`.
+
 Ya vienen instalados y la guía preferiría que no (`ai.navigation`, `visualscripting`, `timeline`,
 `collab-proxy`, más `ai.assistant` y `ai.inference` en pre-release). **Quedan como están**: quitarlos
 es una decisión pendiente, no un paso de la plantilla.

@@ -216,6 +216,15 @@
       },
       "url": "https://packages.unity.com"
     },
+    "jp.shiranui-isuzu.unity-mcp": {
+      "version": "https://github.com/isuzu-shiranui/UnityMCP.git?path=jp.shiranui-isuzu.unity-mcp#v4.3.3",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "3.2.1"
+      },
+      "hash": "500d5caf595d61170a2e13d4c736a9d6527be3f0"
+    },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",
       "depth": 0,
